@@ -1,0 +1,10 @@
+{
+	"id": "pdf-export",
+	"name": "PDF Export",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Export notes to PDF with image support for iOS devices",
+	"author": "Jeroen de Zwart",
+	"authorUrl": "",
+	"isDesktopOnly": false
+}
