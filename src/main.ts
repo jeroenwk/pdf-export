@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS: PDFExportSettings = {
 	exportFolder: 'PDF Exports',
 	pageSize: 'a4',
 	includeImages: true,
-	imageMaxWidth: 1600,
+	imageMaxWidth: 1120,
 	showTitle: true,
 	pdfMargin: 10,
 	canvasScale: 2,
@@ -150,7 +150,7 @@ export default class PDFExportPlugin extends Plugin {
 		// Create container for rendered HTML
 		const containerEl = document.createElement('div');
 		containerEl.addClass('markdown-preview-view');
-		containerEl.style.width = '800px';
+		containerEl.style.width = '1200px';
 		containerEl.style.padding = '40px';
 		containerEl.style.backgroundColor = '#ffffff';
 		containerEl.style.color = '#000000';
@@ -233,6 +233,12 @@ export default class PDFExportPlugin extends Plugin {
 
 					// Replace src with data URL
 					img.setAttribute('src', dataUrl);
+
+					// Apply CSS to ensure proper aspect ratio
+					img.style.maxWidth = '100%';
+					img.style.height = 'auto';
+					img.style.display = 'block';
+					img.style.margin = '12pt auto';
 
 					console.log(`Image embedded: ${imagePath.name} (${(imageData.byteLength / 1024).toFixed(2)} KB)`);
 				} else {
@@ -392,68 +398,33 @@ export default class PDFExportPlugin extends Plugin {
 			height: containerEl.scrollHeight
 		});
 
-		// PDF dimensions
+		// Get canvas dimensions directly
+		const canvasWidth = canvas.width;
+		const canvasHeight = canvas.height;
+
+		// Convert pixels to mm (96 DPI ≈ 3.78 pixels per mm)
+		const imageWidthMM = canvasWidth / 3.78;
+		const imageHeightMM = canvasHeight / 3.78;
+
+		// Create PDF with custom dimensions based on canvas (single page)
 		const pdf = new jsPDF({
-			orientation: 'portrait',
+			orientation: imageHeightMM > imageWidthMM ? 'portrait' : 'landscape',
 			unit: 'mm',
-			format: this.settings.pageSize
+			format: [imageWidthMM + (this.settings.pdfMargin * 2), imageHeightMM + (this.settings.pdfMargin * 2)]
 		});
 
-		const pageWidth = pdf.internal.pageSize.getWidth();
-		const pageHeight = pdf.internal.pageSize.getHeight();
-		const margin = this.settings.pdfMargin;
+		// Convert canvas to data URL
+		const canvasDataUrl = canvas.toDataURL('image/png');
 
-		// Calculate scaling to fit width
-		const imgWidth = pageWidth - (margin * 2);
-		const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-		// Convert canvas to image data
-		const imgData = canvas.toDataURL('image/png');
-
-		// Calculate content height per page (in mm)
-		const pageContentHeight = pageHeight - (margin * 2);
-
-		// If content fits on one page, just add it
-		if (imgHeight <= pageContentHeight) {
-			pdf.addImage(
-				imgData,
-				'PNG',
-				margin,
-				margin,
-				imgWidth,
-				imgHeight
-			);
-		} else {
-			// Multi-page: slice the image
-			let heightLeft = imgHeight;
-			let position = 0;
-
-			// Add first page
-			pdf.addImage(
-				imgData,
-				'PNG',
-				margin,
-				position,
-				imgWidth,
-				imgHeight
-			);
-			heightLeft -= pageContentHeight;
-
-			// Add additional pages
-			while (heightLeft > 0) {
-				position -= pageContentHeight;
-				pdf.addPage();
-				pdf.addImage(
-					imgData,
-					'PNG',
-					margin,
-					position,
-					imgWidth,
-					imgHeight
-				);
-				heightLeft -= pageContentHeight;
-			}
-		}
+		// Add the image to cover the full page (single page)
+		pdf.addImage(
+			canvasDataUrl,
+			'PNG',
+			this.settings.pdfMargin,
+			this.settings.pdfMargin,
+			imageWidthMM,
+			imageHeightMM
+		);
 
 		return pdf;
 	}
