@@ -234,11 +234,13 @@ export default class PDFExportPlugin extends Plugin {
 					// Replace src with data URL
 					img.setAttribute('src', dataUrl);
 
-					// Apply CSS to ensure proper aspect ratio
+					// Apply CSS to ensure proper aspect ratio and prevent overflow
 					img.style.maxWidth = '100%';
 					img.style.height = 'auto';
 					img.style.display = 'block';
 					img.style.margin = '12pt auto';
+					img.style.overflow = 'visible';
+					img.style.pageBreakInside = 'avoid';
 
 					console.log(`Image embedded: ${imagePath.name} (${(imageData.byteLength / 1024).toFixed(2)} KB)`);
 				} else {
@@ -352,6 +354,9 @@ export default class PDFExportPlugin extends Plugin {
 				height: auto;
 				display: block;
 				margin: 12pt auto;
+				overflow: visible;
+				page-break-inside: avoid;
+				break-inside: avoid;
 			}
 			.markdown-preview-view table {
 				border-collapse: collapse;
@@ -389,22 +394,46 @@ export default class PDFExportPlugin extends Plugin {
 
 	async createPDFFromHTML(containerEl: HTMLElement, title: string): Promise<jsPDF> {
 		// Convert HTML to canvas using html2canvas
+		// Ensure container is fully rendered and visible for accurate height calculation
+		containerEl.style.position = 'absolute';
+		containerEl.style.left = '0px';
+		containerEl.style.top = '0px';
+		containerEl.style.visibility = 'visible';
+
+		// Wait for images to load
+		await new Promise(resolve => setTimeout(resolve, 2000));
+
+		// Force a reflow to ensure accurate dimensions
+		containerEl.offsetHeight;
+
 		const canvas = await html2canvas(containerEl, {
 			scale: this.settings.canvasScale,
 			useCORS: true, // For external images
 			logging: false,
 			backgroundColor: '#ffffff',
 			width: containerEl.scrollWidth,
-			height: containerEl.scrollHeight
+			height: containerEl.scrollHeight,
+			allowTaint: false,
+			scrollX: 0,
+			scrollY: 0,
+			windowWidth: containerEl.scrollWidth,
+			windowHeight: containerEl.scrollHeight
 		});
 
 		// Get canvas dimensions directly
 		const canvasWidth = canvas.width;
 		const canvasHeight = canvas.height;
 
+		// Debug logging
+		console.log(`Canvas dimensions: ${canvasWidth}x${canvasHeight} pixels`);
+		console.log(`Container scrollHeight: ${containerEl.scrollHeight}px`);
+		console.log(`Container scrollWidth: ${containerEl.scrollWidth}px`);
+
 		// Convert pixels to mm (96 DPI ≈ 3.78 pixels per mm)
 		const imageWidthMM = canvasWidth / 3.78;
 		const imageHeightMM = canvasHeight / 3.78;
+
+		console.log(`PDF dimensions: ${imageWidthMM.toFixed(1)}x${imageHeightMM.toFixed(1)}mm`);
 
 		// Create PDF with custom dimensions based on canvas (single page)
 		const pdf = new jsPDF({
