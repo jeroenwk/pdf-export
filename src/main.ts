@@ -1,6 +1,7 @@
 import { Plugin, Notice, MarkdownRenderer, MarkdownView, Component, App, PluginSettingTab, Setting, Platform } from 'obsidian';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import { PageManager } from './utils/PageManager';
 // import { PDFVerifier } from './test/pdfVerification';
 
 interface PDFExportSettings {
@@ -429,32 +430,93 @@ export default class PDFExportPlugin extends Plugin {
 		console.log(`Container scrollHeight: ${containerEl.scrollHeight}px`);
 		console.log(`Container scrollWidth: ${containerEl.scrollWidth}px`);
 
-		// Convert pixels to mm (96 DPI ≈ 3.78 pixels per mm)
-		const imageWidthMM = canvasWidth / 3.78;
-		const imageHeightMM = canvasHeight / 3.78;
-
-		console.log(`PDF dimensions: ${imageWidthMM.toFixed(1)}x${imageHeightMM.toFixed(1)}mm`);
-
-		// Create PDF with custom dimensions based on canvas (single page)
-		const pdf = new jsPDF({
-			orientation: imageHeightMM > imageWidthMM ? 'portrait' : 'landscape',
-			unit: 'mm',
-			format: [imageWidthMM + (this.settings.pdfMargin * 2), imageHeightMM + (this.settings.pdfMargin * 2)]
-		});
-
-		// Convert canvas to data URL
-		const canvasDataUrl = canvas.toDataURL('image/png');
-
-		// Add the image to cover the full page (single page)
-		pdf.addImage(
-			canvasDataUrl,
-			'PNG',
+		// Create PageManager to handle multi-page splitting
+		const pageManager = new PageManager(
+			canvasWidth,
+			canvasHeight,
+			this.settings.pageSize,
 			this.settings.pdfMargin,
-			this.settings.pdfMargin,
-			imageWidthMM,
-			imageHeightMM
+			this.settings.canvasScale
 		);
 
+		const pageInfo = pageManager.getPageInfo();
+		const pageCount = pageManager.calculatePageCount(canvasHeight);
+		const segments = pageManager.splitContent(canvasHeight);
+
+		console.log(`Creating ${pageCount} pages with ${segments.length} segments`);
+
+		// Get PDF dimensions from PageManager
+		const pdfDimensions = pageManager.getJSPDFDimensions();
+		const isLandscape = pageManager.getIsLandscape();
+
+		// Create PDF with proper page dimensions
+		const pdf = new jsPDF({
+			orientation: isLandscape ? 'landscape' : 'portrait',
+			unit: 'mm',
+			format: pdfDimensions
+		});
+
+		// Convert canvas to data URL once
+		const canvasDataUrl = canvas.toDataURL('image/png');
+
+		// Add each page segment as a separate page
+		for (let i = 0; i < segments.length; i++) {
+			const segment = segments[i];
+
+			// Add new page for each segment except the first one
+			if (i > 0) {
+				pdf.addPage();
+			}
+
+			// Create a temporary canvas for this segment
+			const segmentCanvas = document.createElement('canvas');
+			segmentCanvas.width = canvasWidth;
+			segmentCanvas.height = segment.height;
+
+			const ctx = segmentCanvas.getContext('2d');
+			if (!ctx) {
+				throw new Error('Could not get 2D context from segment canvas');
+			}
+
+			// Copy the relevant portion from the original canvas
+			ctx.drawImage(
+				canvas,
+				0, segment.y, canvasWidth, segment.height, // Source rectangle
+				0, 0, canvasWidth, segment.height  // Destination rectangle
+			);
+
+			// Convert segment to data URL
+			const segmentDataUrl = segmentCanvas.toDataURL('image/png');
+
+			// Calculate dimensions for this segment in mm
+			// Use the PageManager's content dimensions to get accurate scaling
+			const pageFormat = pageManager.getFormat();
+			const contentAreaWidthMM = pageFormat.width - (2 * this.settings.pdfMargin);
+			const contentAreaHeightMM = pageFormat.height - (2 * this.settings.pdfMargin);
+
+			// Calculate the scaling factor needed to fit the content properly
+			// Use the base content width (without scale factor) for accurate calculation
+			const baseContentWidth = pageInfo.contentWidth / this.settings.canvasScale;
+			const scaleFactor = contentAreaWidthMM / baseContentWidth;
+
+			// Apply the scaling to get proper mm dimensions
+			const segmentWidthMM = (canvasWidth / this.settings.canvasScale) * scaleFactor;
+			const segmentHeightMM = (segment.height / this.settings.canvasScale) * scaleFactor;
+
+			// Add the segment image to the current page
+			pdf.addImage(
+				segmentDataUrl,
+				'PNG',
+				this.settings.pdfMargin,
+				this.settings.pdfMargin,
+				segmentWidthMM,
+				segmentHeightMM
+			);
+
+			console.log(`Added page ${i + 1}/${segments.length}: ${segmentWidthMM.toFixed(1)}x${segmentHeightMM.toFixed(1)}mm at position (${segment.y}, ${segment.height})`);
+		}
+
+		console.log(`Multi-page PDF created with ${segments.length} pages`);
 		return pdf;
 	}
 
