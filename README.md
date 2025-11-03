@@ -1,6 +1,6 @@
-# PDF Export Plugin & CLI
+# PDF Export Plugin
 
-A comprehensive PDF export solution for Obsidian with CLI support and advanced image processing capabilities.
+A comprehensive PDF export solution for Obsidian with advanced image processing capabilities.
 
 ## Features
 
@@ -10,12 +10,6 @@ A comprehensive PDF export solution for Obsidian with CLI support and advanced i
 - Customizable page sizes (A4/Letter)
 - Adjustable quality settings
 - Support for images, tables, code blocks, and formatting
-
-### CLI Tool
-- Standalone command-line tool for PDF export
-- Batch processing capabilities
-- Debug and verification options
-- Integration with build pipelines
 
 ### Advanced Features
 - Image aspect ratio preservation
@@ -30,41 +24,7 @@ A comprehensive PDF export solution for Obsidian with CLI support and advanced i
 1. Copy `main.js` and `manifest.json` to your Obsidian vault's `.obsidian/plugins/pdf-export/` directory
 2. Enable the plugin in Obsidian settings
 3. Use the ribbon icon or command palette to export active note
-
-### CLI Tool
-```bash
-# Install dependencies
-npm install
-
-# Build the CLI
-npm run build-cli
-
-# Export a markdown file
-npm run cli -- "/path/to/file.md"
-
-# With verification
-npm run cli -- "/path/to/file.md" --debug --verify
-```
-
-## CLI Usage
-
-### Basic Usage
-```bash
-npm run cli -- "<input-file>"
-```
-
-### Advanced Options
-```bash
-npm run cli -- "<input-file>" \
-  --output "<output-path>" \
-  --vault "<vault-path>" \
-  --format <a4|letter> \
-  --width <pixels> \
-  --scale <number> \
-  --margin <mm> \
-  --verify \
-  --debug
-```
+``````
 
 ### Options
 - `--output <path>`: Custom output PDF path
@@ -95,7 +55,6 @@ npm run cli -- "<input-file>" \
 pdf-export/
 ├── src/
 │   ├── main.ts              # Obsidian plugin
-│   ├── cli.ts               # CLI tool
 │   ├── PDFExporter.ts       # Core PDF export logic
 │   └── test/                # Test and verification utilities
 ├── manifest.json            # Obsidian plugin manifest
@@ -110,18 +69,6 @@ npm run build
 
 # Build only plugin
 npm run build-plugin
-
-# Build only CLI
-npm run build-cli
-```
-
-### Testing
-```bash
-# Run CLI tests
-npm run test-cli
-
-# Export test file
-npm run cli -- "./test/sample.md" --debug --verify
 ```
 
 ## Troubleshooting
@@ -158,7 +105,6 @@ This project is licensed under the MIT License.
 ### v1.0.0
 - Initial release
 - Obsidian plugin integration
-- CLI tool with advanced options
 - Image processing and embedding
 - PDF verification tools
 - Dynamic page sizing
