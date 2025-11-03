@@ -1,7 +1,7 @@
 import { Plugin, Notice, MarkdownRenderer, MarkdownView, Component, App, PluginSettingTab, Setting, Platform } from 'obsidian';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { PageManager } from './utils/PageManager';
+import { PageManager, ContentSegment } from './utils/PageManager';
 // @ts-ignore
 import manifest from '../manifest.json';
 // import { PDFVerifier } from './test/pdfVerification';
@@ -237,8 +237,8 @@ export default class PDFExportPlugin extends Plugin {
 				horizontalRuleCount++;
 				pageBreakCount++;
 				console.log(`[PAGE BREAK DEBUG] Line ${i+1}: Found horizontal rule #${horizontalRuleCount}, replacing with page break marker`);
-				// Replace with page break marker
-				processedLines.push('<!-- PAGE_BREAK -->');
+				// Replace with page break marker using a special div that will survive markdown rendering
+				processedLines.push('<div class="pdf-page-break" data-page-break="true"></div>');
 			} else {
 				processedLines.push(line);
 			}
@@ -321,70 +321,39 @@ export default class PDFExportPlugin extends Plugin {
 		console.log(`[PAGE BREAK DEBUG] Starting HTML post-processing for page breaks`);
 		console.log(`[PAGE BREAK DEBUG] Container element: ${containerEl.tagName}, classes: ${containerEl.className}`);
 
-		// Find all page break comments and convert them to page break styling
-		const walker = document.createTreeWalker(
-			containerEl,
-			NodeFilter.SHOW_COMMENT,
-			null
-		);
+		// Find all page break divs and convert them to page break styling
+		const pageBreakDivs = containerEl.querySelectorAll('.pdf-page-break[data-page-break="true"]');
+		console.log(`[PAGE BREAK DEBUG] Found ${pageBreakDivs.length} page break divs`);
 
-		const commentsToRemove: Comment[] = [];
-		let commentCount = 0;
-		let pageBreakCommentCount = 0;
-		let currentNode: Node | null;
+		const divsToRemove: HTMLElement[] = [];
+		let pageBreakCount = 0;
 
-		console.log(`[PAGE BREAK DEBUG] Walking DOM tree to find comments...`);
+		pageBreakDivs.forEach((div, index) => {
+			const htmlDiv = div as HTMLElement;
+			pageBreakCount++;
+			console.log(`[PAGE BREAK DEBUG] Processing page break div #${pageBreakCount}`);
 
-		while ((currentNode = walker.nextNode())) {
-			commentCount++;
-			const comment = currentNode as Comment;
-			console.log(`[PAGE BREAK DEBUG] Found comment #${commentCount}: "${comment.textContent}"`);
+			// Convert this div to a visual page break indicator that will be handled by PageManager
+			htmlDiv.className = 'pdf-page-break-marker';
+			htmlDiv.setAttribute('data-page-break-marker', 'true');
+			htmlDiv.style.cssText = `
+				height: 20px;
+				width: 100%;
+				background: transparent;
+				margin: 10px 0;
+				page-break-after: always;
+				break-after: page;
+				border-top: 1px dashed #ccc;
+				display: block;
+			`;
 
-			if (comment.textContent === ' PAGE_BREAK ') {
-				pageBreakCommentCount++;
-				commentsToRemove.push(comment);
-				console.log(`[PAGE BREAK DEBUG] Found page break comment #${pageBreakCommentCount}`);
-
-				// Apply page break styling to the previous sibling element or parent
-				let targetElement: HTMLElement | null = comment.previousElementSibling as HTMLElement;
-				let targetInfo = 'previous sibling';
-
-				if (!targetElement) {
-					targetElement = comment.parentElement as HTMLElement;
-					targetInfo = 'parent';
-				}
-
-				console.log(`[PAGE BREAK DEBUG] Target element (${targetInfo}): ${targetElement?.tagName || 'null'}, classes: ${targetElement?.className || 'none'}`);
-
-				if (targetElement) {
-					const oldStyles = {
-						pageBreakAfter: targetElement.style.pageBreakAfter,
-						breakAfter: targetElement.style.breakAfter,
-						marginBottom: targetElement.style.marginBottom
-					};
-
-					targetElement.style.pageBreakAfter = 'always';
-					targetElement.style.breakAfter = 'page';
-					targetElement.style.marginBottom = '0';
-
-					console.log(`[PAGE BREAK DEBUG] Applied page break styles to ${targetElement.tagName}:`);
-					console.log(`[PAGE BREAK DEBUG]   pageBreakAfter: "${oldStyles.pageBreakAfter}" → "always"`);
-					console.log(`[PAGE BREAK DEBUG]   breakAfter: "${oldStyles.breakAfter}" → "page"`);
-					console.log(`[PAGE BREAK DEBUG]   marginBottom: "${oldStyles.marginBottom}" → "0"`);
-				} else {
-					console.log(`[PAGE BREAK DEBUG] ERROR: No target element found for page break comment!`);
-				}
-			}
-		}
-
-		console.log(`[PAGE BREAK DEBUG] Processed ${commentCount} total comments, found ${pageBreakCommentCount} page break comments`);
-
-		// Remove the comment nodes
-		console.log(`[PAGE BREAK DEBUG] Removing ${commentsToRemove.length} page break comment nodes`);
-		commentsToRemove.forEach((comment, index) => {
-			console.log(`[PAGE BREAK DEBUG] Removing comment #${index + 1}`);
-			comment.remove();
+			console.log(`[PAGE BREAK DEBUG] Converted div to page break marker`);
 		});
+
+		console.log(`[PAGE BREAK DEBUG] Processed ${pageBreakCount} page break divs`);
+
+		// Instead of removing the divs, keep them as markers for the PageManager
+		console.log(`[PAGE BREAK DEBUG] Keeping ${pageBreakCount} page break markers for PageManager processing`);
 
 		console.log(`[PAGE BREAK DEBUG] HTML post-processing complete`);
 	}
@@ -655,6 +624,81 @@ export default class PDFExportPlugin extends Plugin {
 		container.appendChild(style);
 	}
 
+	// Create smart page segments based on page break markers
+	createSmartPageSegments(canvasWidth: number, canvasHeight: number, markerPositions: number[], markers: NodeListOf<Element>): ContentSegment[] {
+		console.log(`[PAGE BREAK DEBUG] Creating smart page segments. Canvas: ${canvasWidth}x${canvasHeight}, Markers: ${markerPositions.length}`);
+
+		const pageManager = new PageManager(
+			canvasWidth,
+			canvasHeight,
+			this.settings.pageSize,
+			this.settings.pdfMargin,
+			this.settings.canvasScale
+		);
+
+		const pageInfo = pageManager.getPageInfo();
+		const pageHeight = pageInfo.contentHeight;
+		console.log(`[PAGE BREAK DEBUG] Page content height: ${pageHeight}px`);
+
+		const segments: ContentSegment[] = [];
+		let currentY = 0;
+		let markerIndex = 0;
+
+		// Hide page break markers before canvas creation (they're invisible but we want to be sure)
+		markers.forEach((marker, index) => {
+			(marker as HTMLElement).style.display = 'none';
+			console.log(`[PAGE BREAK DEBUG] Hidden marker ${index + 1}`);
+		});
+
+		while (currentY < canvasHeight) {
+			let segmentHeight: number;
+			let pageBreakUsed = false;
+
+			// Check if there's a page break marker within the current page range
+			if (markerIndex < markerPositions.length) {
+				const nextMarkerPos = markerPositions[markerIndex];
+				const distanceToMarker = nextMarkerPos - currentY;
+
+				console.log(`[PAGE BREAK DEBUG] Next marker at ${nextMarkerPos}px, current at ${currentY}px, distance: ${distanceToMarker}px`);
+
+				if (distanceToMarker > 0 && distanceToMarker < pageHeight) {
+					// Marker is within current page - break at the marker
+					segmentHeight = distanceToMarker;
+					markerIndex++;
+					pageBreakUsed = true;
+					console.log(`[PAGE BREAK DEBUG] Breaking at marker, segment height: ${segmentHeight}px`);
+				} else if (distanceToMarker <= 0) {
+					// We've passed a marker (shouldn't happen), skip it
+					markerIndex++;
+					continue;
+				} else {
+					// Marker is beyond current page, use full page height
+					segmentHeight = Math.min(pageHeight, canvasHeight - currentY);
+					console.log(`[PAGE BREAK DEBUG] Using full page height: ${segmentHeight}px`);
+				}
+			} else {
+				// No more markers, use remaining content
+				segmentHeight = Math.min(pageHeight, canvasHeight - currentY);
+				console.log(`[PAGE BREAK DEBUG] No more markers, using remaining height: ${segmentHeight}px`);
+			}
+
+			if (segmentHeight <= 0) break;
+
+			segments.push({
+				y: currentY,
+				height: segmentHeight,
+				pageNumber: segments.length
+			});
+
+			console.log(`[PAGE BREAK DEBUG] Created segment ${segments.length}: y=${currentY}, height=${segmentHeight}, pageBreak=${pageBreakUsed}`);
+
+			currentY += segmentHeight;
+		}
+
+		console.log(`[PAGE BREAK DEBUG] Smart page breaking complete. Created ${segments.length} segments`);
+		return segments;
+	}
+
 	async createPDFFromHTML(containerEl: HTMLElement, title: string): Promise<jsPDF> {
 		// Convert HTML to canvas using html2canvas
 		// Ensure container is fully rendered and visible for accurate height calculation
@@ -692,7 +736,54 @@ export default class PDFExportPlugin extends Plugin {
 		console.log(`Container scrollHeight: ${containerEl.scrollHeight}px`);
 		console.log(`Container scrollWidth: ${containerEl.scrollWidth}px`);
 
-		// Create PageManager to handle multi-page splitting
+		// Check if we have page break markers to handle
+		const pageBreakMarkers = containerEl.querySelectorAll('.pdf-page-break-marker[data-page-break-marker="true"]');
+		console.log(`[PAGE BREAK DEBUG] Found ${pageBreakMarkers.length} page break markers in rendered HTML`);
+
+		let segments;
+		let pageCount;
+
+		if (this.settings.treatHorizontalRuleAsPageBreak && pageBreakMarkers.length > 0) {
+			// Use smart page breaking with markers
+			console.log(`[PAGE BREAK DEBUG] Using smart page breaking with ${pageBreakMarkers.length} markers`);
+
+			// Get the positions of page break markers in the canvas
+			const markerPositions: number[] = [];
+			pageBreakMarkers.forEach((marker, index) => {
+				const rect = marker.getBoundingClientRect();
+				const containerRect = containerEl.getBoundingClientRect();
+				const position = (rect.top - containerRect.top) * this.settings.canvasScale;
+				markerPositions.push(position);
+				console.log(`[PAGE BREAK DEBUG] Page break marker ${index + 1} at position: ${position}px`);
+			});
+
+			segments = this.createSmartPageSegments(canvasWidth, canvasHeight, markerPositions, pageBreakMarkers);
+			pageCount = segments.length;
+
+			console.log(`[PAGE BREAK DEBUG] Smart page breaking created ${pageCount} segments`);
+		} else {
+			// Use regular PageManager splitting
+			console.log(`[PAGE BREAK DEBUG] Using regular page breaking (no markers or feature disabled)`);
+
+			const pageManager = new PageManager(
+				canvasWidth,
+				canvasHeight,
+				this.settings.pageSize,
+				this.settings.pdfMargin,
+				this.settings.canvasScale
+			);
+
+			const pageInfo = pageManager.getPageInfo();
+			segments = pageManager.splitContent(canvasHeight);
+			pageCount = segments.length;
+
+			console.log(`[DEBUG] PageInfo - contentWidth: ${pageInfo.contentWidth}px, contentHeight: ${pageInfo.contentHeight}px, scale: ${pageInfo.scale}`);
+		}
+
+		console.log(`[DEBUG] Actual canvas scale: ${canvasWidth / containerEl.scrollWidth}`);
+		console.log(`Creating ${pageCount} pages with ${segments.length} segments`);
+
+		// Create a PageManager just to get PDF dimensions and orientation
 		const pageManager = new PageManager(
 			canvasWidth,
 			canvasHeight,
@@ -700,14 +791,6 @@ export default class PDFExportPlugin extends Plugin {
 			this.settings.pdfMargin,
 			this.settings.canvasScale
 		);
-
-		const pageInfo = pageManager.getPageInfo();
-		const pageCount = pageManager.calculatePageCount(canvasHeight);
-		const segments = pageManager.splitContent(canvasHeight);
-
-		console.log(`[DEBUG] PageInfo - contentWidth: ${pageInfo.contentWidth}px, contentHeight: ${pageInfo.contentHeight}px, scale: ${pageInfo.scale}`);
-		console.log(`[DEBUG] Actual canvas scale: ${canvasWidth / containerEl.scrollWidth}`);
-		console.log(`Creating ${pageCount} pages with ${segments.length} segments`);
 
 		// Get PDF dimensions from PageManager
 		const pdfDimensions = pageManager.getJSPDFDimensions();
