@@ -2,13 +2,14 @@ import { Plugin, Notice, MarkdownRenderer, MarkdownView, Component, App, PluginS
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { PageManager } from './utils/PageManager';
+// @ts-ignore
+import manifest from '../manifest.json';
 // import { PDFVerifier } from './test/pdfVerification';
 
 interface PDFExportSettings {
 	exportFolder: string;
 	pageSize: 'a4' | 'letter';
 	includeImages: boolean;
-	imageMaxWidth: number;
 	showTitle: boolean;
 	pdfMargin: number;
 	canvasScale: number;
@@ -19,12 +20,24 @@ const DEFAULT_SETTINGS: PDFExportSettings = {
 	exportFolder: 'PDF Exports',
 	pageSize: 'a4',
 	includeImages: true,
-	imageMaxWidth: 1120,
 	showTitle: true,
 	pdfMargin: 10,
 	canvasScale: 2,
 	autoVerifyPDF: false
 };
+
+// Calculate optimal container/image width based on page size and margins
+function calculateContentWidth(pageSize: 'a4' | 'letter', margin: number): number {
+	const PIXELS_PER_MM = 3.7795275591;
+	const formats = {
+		a4: { width: 210, height: 297 },      // mm
+		letter: { width: 216, height: 279 }   // mm (8.5×11 inches)
+	};
+
+	const format = formats[pageSize];
+	const contentWidthMM = format.width - (2 * margin);
+	return Math.round(contentWidthMM * PIXELS_PER_MM);
+}
 
 export default class PDFExportPlugin extends Plugin {
 	settings: PDFExportSettings;
@@ -71,6 +84,10 @@ export default class PDFExportPlugin extends Plugin {
 	}
 
 	async exportToPDF() {
+		console.log(`========================================`);
+		console.log(`PDF EXPORT PLUGIN v${manifest.version}`);
+		console.log(`========================================`);
+
 		try {
 			// Get the active file
 			const activeFile = this.app.workspace.getActiveFile();
@@ -149,10 +166,13 @@ export default class PDFExportPlugin extends Plugin {
 
 	async renderMarkdownToHTML(content: string, sourcePath: string, title: string): Promise<HTMLElement> {
 		// Create container for rendered HTML
+		// Width is calculated dynamically based on page size and margins
+		const contentWidth = calculateContentWidth(this.settings.pageSize, this.settings.pdfMargin);
+
 		const containerEl = document.createElement('div');
 		containerEl.addClass('markdown-preview-view');
-		containerEl.style.width = '1200px';
-		containerEl.style.padding = '40px';
+		containerEl.style.width = `${contentWidth}px`; // Dynamic width based on page format
+		containerEl.style.padding = '0px'; // No padding - will be handled by PDF margins
 		containerEl.style.backgroundColor = '#ffffff';
 		containerEl.style.color = '#000000';
 
@@ -185,16 +205,23 @@ export default class PDFExportPlugin extends Plugin {
 	}
 
 	async processImages(containerEl: HTMLElement, sourcePath: string) {
+		const contentWidth = calculateContentWidth(this.settings.pageSize, this.settings.pdfMargin);
+		console.log(`[v${manifest.version}] Processing ${containerEl.querySelectorAll('img').length} images with maxWidth: ${contentWidth}px (${this.settings.pageSize.toUpperCase()})`);
 		const images = containerEl.querySelectorAll('img');
 
 		for (const img of Array.from(images)) {
 			try {
 				const src = img.getAttribute('src');
-				if (!src) continue;
+				console.log(`[DEBUG] Processing img src: ${src}`);
+
+				if (!src) {
+					console.log('[DEBUG] No src, skipping');
+					continue;
+				}
 
 				// Skip external URLs (http/https)
 				if (src.startsWith('http://') || src.startsWith('https://')) {
-					console.log('Skipping external image:', src);
+					console.log('[DEBUG] Skipping external image');
 					continue;
 				}
 
@@ -202,22 +229,64 @@ export default class PDFExportPlugin extends Plugin {
 
 				// Handle Obsidian's app:// protocol
 				if (src.startsWith('app://')) {
-					// Extract the filename from app://local/... URL
-					const urlPath = decodeURIComponent(src);
-					// app://local/path/to/vault/filename.png
-					const parts = urlPath.split('/');
-					const filename = parts[parts.length - 1];
+					console.log('[DEBUG] Detected app:// URL, parsing...');
 
-					// Try to find the file in the vault
-					imagePath = this.app.metadataCache.getFirstLinkpathDest(filename, sourcePath);
+					// Extract path from app://hash/full/path/to/file.png?timestamp
+					let urlPath = decodeURIComponent(src);
+					console.log('[DEBUG] Decoded URL:', urlPath);
+
+					// Remove query string first
+					const queryIndex = urlPath.indexOf('?');
+					if (queryIndex !== -1) {
+						urlPath = urlPath.substring(0, queryIndex);
+						console.log('[DEBUG] After removing query string:', urlPath);
+					}
+
+					// Remove app://hash/ prefix to get the full file path
+					// Format: app://hash/Users/user/vault/path/to/file.png
+					const pathMatch = urlPath.match(/^app:\/\/[^\/]+\/(.+)$/);
+					if (pathMatch) {
+						const fullPath = pathMatch[1]; // /Users/jeroendezwart/2th Brain/...
+						console.log('[DEBUG] Extracted full path:', fullPath);
+
+						// Get vault base path
+						const vaultPath = (this.app.vault.adapter as any).getBasePath();
+						console.log('[DEBUG] Vault base path:', vaultPath);
+
+						// If the full path starts with the vault path, get the relative path
+						if (fullPath.startsWith(vaultPath)) {
+							const relativePath = fullPath.substring(vaultPath.length + 1); // +1 for the /
+							console.log('[DEBUG] Relative path from vault:', relativePath);
+
+							const abstractFile = this.app.vault.getAbstractFileByPath(relativePath);
+							console.log('[DEBUG] getAbstractFileByPath result:', abstractFile ? abstractFile.path : 'null');
+
+							if (abstractFile && 'extension' in abstractFile) {
+								imagePath = abstractFile as any;
+								console.log('[DEBUG] Found image via relative path!');
+							}
+						} else {
+							console.log('[DEBUG] Full path does not start with vault path, trying filename fallback');
+							// Fallback: try just the filename
+							const parts = fullPath.split('/');
+							const filename = parts[parts.length - 1];
+							console.log('[DEBUG] Trying to find filename:', filename);
+							imagePath = this.app.metadataCache.getFirstLinkpathDest(filename, sourcePath);
+							console.log('[DEBUG] getFirstLinkpathDest result:', imagePath ? imagePath.path : 'null');
+						}
+					} else {
+						console.log('[DEBUG] Failed to match app:// URL pattern');
+					}
 				}
 				// Handle relative paths and wiki-style embeds
 				else {
+					console.log('[DEBUG] Non-app URL, using getFirstLinkpathDest');
 					imagePath = this.app.metadataCache.getFirstLinkpathDest(src, sourcePath);
+					console.log('[DEBUG] getFirstLinkpathDest result:', imagePath ? imagePath.path : 'null');
 				}
 
 				if (imagePath) {
-					console.log('Processing image:', imagePath.path);
+					console.log('[DEBUG] SUCCESS! Processing image:', imagePath.path);
 
 					// Read image as binary
 					const imageData = await this.app.vault.readBinary(imagePath);
@@ -235,8 +304,14 @@ export default class PDFExportPlugin extends Plugin {
 					// Replace src with data URL
 					img.setAttribute('src', dataUrl);
 
+					// Remove any existing width/height attributes that might override CSS
+					img.removeAttribute('width');
+					img.removeAttribute('height');
+
 					// Apply CSS to ensure proper aspect ratio and prevent overflow
-					img.style.maxWidth = '100%';
+					// Force the image to the calculated content width (based on page size)
+					img.style.width = `${contentWidth}px`;
+					img.style.maxWidth = `${contentWidth}px`;
 					img.style.height = 'auto';
 					img.style.display = 'block';
 					img.style.margin = '12pt auto';
@@ -244,6 +319,7 @@ export default class PDFExportPlugin extends Plugin {
 					img.style.pageBreakInside = 'avoid';
 
 					console.log(`Image embedded: ${imagePath.name} (${(imageData.byteLength / 1024).toFixed(2)} KB)`);
+					console.log(`Image styled with width: ${contentWidth}px, actual rendered width will be checked...`);
 				} else {
 					console.warn('Could not find image file:', src);
 				}
@@ -277,6 +353,7 @@ export default class PDFExportPlugin extends Plugin {
 
 	applyPDFStyles(container: HTMLElement) {
 		// Inject PDF-friendly CSS
+		const contentWidth = calculateContentWidth(this.settings.pageSize, this.settings.pdfMargin);
 		const style = document.createElement('style');
 		style.textContent = `
 			.markdown-preview-view {
@@ -351,7 +428,7 @@ export default class PDFExportPlugin extends Plugin {
 				color: #000 !important;
 			}
 			.markdown-preview-view img {
-				max-width: 100%;
+				max-width: ${contentWidth}px;
 				height: auto;
 				display: block;
 				margin: 12pt auto;
@@ -443,6 +520,8 @@ export default class PDFExportPlugin extends Plugin {
 		const pageCount = pageManager.calculatePageCount(canvasHeight);
 		const segments = pageManager.splitContent(canvasHeight);
 
+		console.log(`[DEBUG] PageInfo - contentWidth: ${pageInfo.contentWidth}px, contentHeight: ${pageInfo.contentHeight}px, scale: ${pageInfo.scale}`);
+		console.log(`[DEBUG] Actual canvas scale: ${canvasWidth / containerEl.scrollWidth}`);
 		console.log(`Creating ${pageCount} pages with ${segments.length} segments`);
 
 		// Get PDF dimensions from PageManager
@@ -489,25 +568,39 @@ export default class PDFExportPlugin extends Plugin {
 			const segmentDataUrl = segmentCanvas.toDataURL('image/png');
 
 			// Calculate dimensions for this segment in mm
-			// Use the PageManager's content dimensions to get accurate scaling
+			// Strategy: Use full page height, scale width proportionally
+
 			const pageFormat = pageManager.getFormat();
 			const contentAreaWidthMM = pageFormat.width - (2 * this.settings.pdfMargin);
 			const contentAreaHeightMM = pageFormat.height - (2 * this.settings.pdfMargin);
 
-			// Calculate the scaling factor needed to fit the content properly
-			// Use the base content width (without scale factor) for accurate calculation
-			const baseContentWidth = pageInfo.contentWidth / this.settings.canvasScale;
-			const scaleFactor = contentAreaWidthMM / baseContentWidth;
+			// Calculate aspect ratio of the canvas segment
+			const canvasAspectRatio = canvasWidth / segment.height;
+			console.log(`[DEBUG] Segment ${i}: canvasWidth=${canvasWidth}, segmentHeight=${segment.height}, aspectRatio=${canvasAspectRatio.toFixed(3)}`);
 
-			// Apply the scaling to get proper mm dimensions
-			const segmentWidthMM = (canvasWidth / this.settings.canvasScale) * scaleFactor;
-			const segmentHeightMM = (segment.height / this.settings.canvasScale) * scaleFactor;
+			// Always use full height, calculate width from aspect ratio
+			let segmentHeightMM = contentAreaHeightMM;
+			let segmentWidthMM = contentAreaHeightMM * canvasAspectRatio;
+
+			console.log(`[DEBUG] Fit by height: ${segmentWidthMM.toFixed(1)}mm x ${segmentHeightMM.toFixed(1)}mm`);
+
+			// If width exceeds content area, scale down to fit width
+			if (segmentWidthMM > contentAreaWidthMM) {
+				segmentWidthMM = contentAreaWidthMM;
+				segmentHeightMM = contentAreaWidthMM / canvasAspectRatio;
+				console.log(`[DEBUG] Too wide! Fit by width instead: ${segmentWidthMM.toFixed(1)}mm x ${segmentHeightMM.toFixed(1)}mm`);
+			}
+
+			// Center content horizontally if it's narrower than the page
+			const xOffset = this.settings.pdfMargin + (contentAreaWidthMM - segmentWidthMM) / 2;
+
+			console.log(`[DEBUG] Final segment size: ${segmentWidthMM.toFixed(1)}mm x ${segmentHeightMM.toFixed(1)}mm at x=${xOffset.toFixed(1)}mm`);
 
 			// Add the segment image to the current page
 			pdf.addImage(
 				segmentDataUrl,
 				'PNG',
-				this.settings.pdfMargin,
+				xOffset,
 				this.settings.pdfMargin,
 				segmentWidthMM,
 				segmentHeightMM
@@ -617,22 +710,7 @@ class PDFExportSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		// Image max width
-		new Setting(containerEl)
-			.setName('Image max width')
-			.setDesc('Maximum width for images in pixels (for optimization)')
-			.addText(text => text
-				.setPlaceholder('1600')
-				.setValue(String(this.plugin.settings.imageMaxWidth))
-				.onChange(async (value) => {
-					const num = parseInt(value);
-					if (!isNaN(num) && num > 0) {
-						this.plugin.settings.imageMaxWidth = num;
-						await this.plugin.saveSettings();
-					}
-				}));
-
-		// PDF margin
+		// PDF margin (image width is calculated automatically from this and page size)
 		new Setting(containerEl)
 			.setName('PDF margin')
 			.setDesc('Page margins in millimeters')

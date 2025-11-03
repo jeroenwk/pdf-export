@@ -51,7 +51,9 @@ export class PageManager {
 		}
 
 		// Convert mm to pixels for calculations
-		const marginPx = margin * this.PIXELS_PER_MM;
+		// NOTE: The canvas from html2canvas is scaled by the scale factor
+		// So we need to scale our page dimensions to match the canvas scale
+		const marginPx = margin * this.PIXELS_PER_MM * scale;
 
 		this.pageInfo = {
 			width: this.format.width * this.PIXELS_PER_MM * scale,
