@@ -46,7 +46,6 @@ A comprehensive PDF export solution for Obsidian with advanced image processing 
 - **Image max width**: Maximum width for images in pixels
 - **PDF margin**: Page margins in millimeters
 - **Quality (scale)**: Higher values = better quality but larger file size
-- **Auto-verify PDFs**: Generate PNG verification images after export
 
 ## Development
 
