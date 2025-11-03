@@ -14,6 +14,7 @@ interface PDFExportSettings {
 	pdfMargin: number;
 	canvasScale: number;
 	autoVerifyPDF: boolean;
+	treatHorizontalRuleAsPageBreak: boolean;
 }
 
 const DEFAULT_SETTINGS: PDFExportSettings = {
@@ -23,7 +24,8 @@ const DEFAULT_SETTINGS: PDFExportSettings = {
 	showTitle: true,
 	pdfMargin: 10,
 	canvasScale: 2,
-	autoVerifyPDF: false
+	autoVerifyPDF: false,
+	treatHorizontalRuleAsPageBreak: false
 };
 
 // Calculate optimal container/image width based on page size and margins
@@ -87,6 +89,8 @@ export default class PDFExportPlugin extends Plugin {
 		console.log(`========================================`);
 		console.log(`PDF EXPORT PLUGIN v${manifest.version}`);
 		console.log(`========================================`);
+		console.log(`[PAGE BREAK DEBUG] Starting exportToPDF`);
+		console.log(`[PAGE BREAK DEBUG] Current settings: treatHorizontalRuleAsPageBreak = ${this.settings.treatHorizontalRuleAsPageBreak}`);
 
 		try {
 			// Get the active file
@@ -102,6 +106,7 @@ export default class PDFExportPlugin extends Plugin {
 				return;
 			}
 
+			console.log(`[PAGE BREAK DEBUG] Exporting file: ${activeFile.path}`);
 			new Notice('Generating PDF...');
 
 			// Read the note content
@@ -113,6 +118,19 @@ export default class PDFExportPlugin extends Plugin {
 			// Apply PDF-friendly styles
 			this.applyPDFStyles(containerEl);
 
+			console.log(`[PAGE BREAK DEBUG] HTML structure after PDF styles applied:`);
+			console.log(`[PAGE BREAK DEBUG] Container has ${containerEl.children.length} direct children`);
+			for (let i = 0; i < containerEl.children.length; i++) {
+				const child = containerEl.children[i] as HTMLElement;
+				console.log(`[PAGE BREAK DEBUG]   Child ${i}: ${child.tagName} (classes: ${child.className}, id: ${child.id})`);
+				if (child.style.pageBreakAfter) {
+					console.log(`[PAGE BREAK DEBUG]     → Has pageBreakAfter: ${child.style.pageBreakAfter}`);
+				}
+				if (child.style.breakAfter) {
+					console.log(`[PAGE BREAK DEBUG]     → Has breakAfter: ${child.style.breakAfter}`);
+				}
+			}
+
 			// Process and embed images from vault (if enabled)
 			if (this.settings.includeImages) {
 				await this.processImages(containerEl, activeFile.path);
@@ -122,6 +140,7 @@ export default class PDFExportPlugin extends Plugin {
 				images.forEach(img => img.remove());
 			}
 
+			console.log(`[PAGE BREAK DEBUG] About to create PDF from HTML`);
 			// Create PDF from HTML
 			const pdf = await this.createPDFFromHTML(containerEl, activeFile.basename);
 
@@ -164,6 +183,74 @@ export default class PDFExportPlugin extends Plugin {
 		}
 	}
 
+	// Preprocess markdown to handle horizontal rules as page breaks
+	preprocessMarkdownForPageBreaks(content: string): string {
+		console.log(`[PAGE BREAK DEBUG] preprocessMarkdownForPageBreaks called. treatHorizontalRuleAsPageBreak: ${this.settings.treatHorizontalRuleAsPageBreak}`);
+
+		if (!this.settings.treatHorizontalRuleAsPageBreak) {
+			console.log(`[PAGE BREAK DEBUG] Feature disabled, returning original content`);
+			return content;
+		}
+
+		console.log(`[PAGE BREAK DEBUG] Original content length: ${content.length} characters`);
+
+		// Split into lines to process
+		const lines = content.split('\n');
+		const processedLines: string[] = [];
+		let inCodeBlock = false;
+		let inQuoteBlock = false;
+		let horizontalRuleCount = 0;
+		let pageBreakCount = 0;
+
+		console.log(`[PAGE BREAK DEBUG] Processing ${lines.length} lines`);
+
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i];
+			const trimmed = line.trim();
+
+			// Track code blocks
+			if (trimmed.startsWith('```')) {
+				inCodeBlock = !inCodeBlock;
+				console.log(`[PAGE BREAK DEBUG] Line ${i+1}: Code block ${inCodeBlock ? 'opened' : 'closed'}`);
+				processedLines.push(line);
+				continue;
+			}
+
+			// Track quote blocks
+			if (trimmed.startsWith('>')) {
+				inQuoteBlock = true;
+				console.log(`[PAGE BREAK DEBUG] Line ${i+1}: Quote block started`);
+			} else if (inQuoteBlock && trimmed === '') {
+				// Empty line after quote block - could be end
+				// Check if next line is not a quote
+				if (i === lines.length - 1 || !lines[i + 1].trim().startsWith('>')) {
+					inQuoteBlock = false;
+					console.log(`[PAGE BREAK DEBUG] Line ${i+1}: Quote block ended`);
+				}
+			} else if (inQuoteBlock && !trimmed.startsWith('>')) {
+				inQuoteBlock = false;
+				console.log(`[PAGE BREAK DEBUG] Line ${i+1}: Quote block ended`);
+			}
+
+			// Check for horizontal rule (only exact triple dashes, not in code or quote blocks)
+			if (!inCodeBlock && !inQuoteBlock && trimmed === '---') {
+				horizontalRuleCount++;
+				pageBreakCount++;
+				console.log(`[PAGE BREAK DEBUG] Line ${i+1}: Found horizontal rule #${horizontalRuleCount}, replacing with page break marker`);
+				// Replace with page break marker
+				processedLines.push('<!-- PAGE_BREAK -->');
+			} else {
+				processedLines.push(line);
+			}
+		}
+
+		const result = processedLines.join('\n');
+		console.log(`[PAGE BREAK DEBUG] Processing complete. Found ${horizontalRuleCount} horizontal rules, inserted ${pageBreakCount} page breaks`);
+		console.log(`[PAGE BREAK DEBUG] Processed content length: ${result.length} characters`);
+
+		return result;
+	}
+
 	async renderMarkdownToHTML(content: string, sourcePath: string, title: string): Promise<HTMLElement> {
 		// Create container for rendered HTML
 		// Width is calculated dynamically based on page size and margins
@@ -191,17 +278,115 @@ export default class PDFExportPlugin extends Plugin {
 			containerEl.appendChild(titleEl);
 		}
 
+		// Preprocess markdown for page breaks if enabled
+		let processedContent = content;
+		if (this.settings.treatHorizontalRuleAsPageBreak) {
+			console.log(`[PAGE BREAK DEBUG] About to preprocess markdown for page breaks`);
+			processedContent = this.preprocessMarkdownForPageBreaks(content);
+			console.log(`[PAGE BREAK DEBUG] Markdown preprocessing complete`);
+		} else {
+			console.log(`[PAGE BREAK DEBUG] Page break preprocessing disabled`);
+		}
+
+		console.log(`[PAGE BREAK DEBUG] About to render markdown to HTML`);
+		console.log(`[PAGE BREAK DEBUG] Content length being rendered: ${processedContent.length}`);
+
 		// Use Obsidian's markdown renderer
 		const component = new Component();
 		await MarkdownRenderer.render(
 			this.app,
-			content,
+			processedContent,
 			containerEl,
 			sourcePath,
 			component
 		);
 
+		console.log(`[PAGE BREAK DEBUG] Markdown rendering complete. Container has ${containerEl.children.length} child elements`);
+
+		// Post-process HTML to handle page breaks
+		this.postprocessHTMLForPageBreaks(containerEl);
+
 		return containerEl;
+	}
+
+	// Post-process HTML to handle page breaks
+	postprocessHTMLForPageBreaks(containerEl: HTMLElement): void {
+		console.log(`[PAGE BREAK DEBUG] postprocessHTMLForPageBreaks called. treatHorizontalRuleAsPageBreak: ${this.settings.treatHorizontalRuleAsPageBreak}`);
+
+		if (!this.settings.treatHorizontalRuleAsPageBreak) {
+			console.log(`[PAGE BREAK DEBUG] Feature disabled, skipping HTML post-processing`);
+			return;
+		}
+
+		console.log(`[PAGE BREAK DEBUG] Starting HTML post-processing for page breaks`);
+		console.log(`[PAGE BREAK DEBUG] Container element: ${containerEl.tagName}, classes: ${containerEl.className}`);
+
+		// Find all page break comments and convert them to page break styling
+		const walker = document.createTreeWalker(
+			containerEl,
+			NodeFilter.SHOW_COMMENT,
+			null
+		);
+
+		const commentsToRemove: Comment[] = [];
+		let commentCount = 0;
+		let pageBreakCommentCount = 0;
+		let currentNode: Node | null;
+
+		console.log(`[PAGE BREAK DEBUG] Walking DOM tree to find comments...`);
+
+		while ((currentNode = walker.nextNode())) {
+			commentCount++;
+			const comment = currentNode as Comment;
+			console.log(`[PAGE BREAK DEBUG] Found comment #${commentCount}: "${comment.textContent}"`);
+
+			if (comment.textContent === ' PAGE_BREAK ') {
+				pageBreakCommentCount++;
+				commentsToRemove.push(comment);
+				console.log(`[PAGE BREAK DEBUG] Found page break comment #${pageBreakCommentCount}`);
+
+				// Apply page break styling to the previous sibling element or parent
+				let targetElement: HTMLElement | null = comment.previousElementSibling as HTMLElement;
+				let targetInfo = 'previous sibling';
+
+				if (!targetElement) {
+					targetElement = comment.parentElement as HTMLElement;
+					targetInfo = 'parent';
+				}
+
+				console.log(`[PAGE BREAK DEBUG] Target element (${targetInfo}): ${targetElement?.tagName || 'null'}, classes: ${targetElement?.className || 'none'}`);
+
+				if (targetElement) {
+					const oldStyles = {
+						pageBreakAfter: targetElement.style.pageBreakAfter,
+						breakAfter: targetElement.style.breakAfter,
+						marginBottom: targetElement.style.marginBottom
+					};
+
+					targetElement.style.pageBreakAfter = 'always';
+					targetElement.style.breakAfter = 'page';
+					targetElement.style.marginBottom = '0';
+
+					console.log(`[PAGE BREAK DEBUG] Applied page break styles to ${targetElement.tagName}:`);
+					console.log(`[PAGE BREAK DEBUG]   pageBreakAfter: "${oldStyles.pageBreakAfter}" → "always"`);
+					console.log(`[PAGE BREAK DEBUG]   breakAfter: "${oldStyles.breakAfter}" → "page"`);
+					console.log(`[PAGE BREAK DEBUG]   marginBottom: "${oldStyles.marginBottom}" → "0"`);
+				} else {
+					console.log(`[PAGE BREAK DEBUG] ERROR: No target element found for page break comment!`);
+				}
+			}
+		}
+
+		console.log(`[PAGE BREAK DEBUG] Processed ${commentCount} total comments, found ${pageBreakCommentCount} page break comments`);
+
+		// Remove the comment nodes
+		console.log(`[PAGE BREAK DEBUG] Removing ${commentsToRemove.length} page break comment nodes`);
+		commentsToRemove.forEach((comment, index) => {
+			console.log(`[PAGE BREAK DEBUG] Removing comment #${index + 1}`);
+			comment.remove();
+		});
+
+		console.log(`[PAGE BREAK DEBUG] HTML post-processing complete`);
 	}
 
 	async processImages(containerEl: HTMLElement, sourcePath: string) {
@@ -748,6 +933,17 @@ class PDFExportSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.autoVerifyPDF)
 				.onChange(async (value) => {
 					this.plugin.settings.autoVerifyPDF = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Treat horizontal rule as page break
+		new Setting(containerEl)
+			.setName('Treat --- as page breaks')
+			.setDesc('Convert horizontal rules (---) to page breaks. Rules will be hidden and content will break to next page.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.treatHorizontalRuleAsPageBreak)
+				.onChange(async (value) => {
+					this.plugin.settings.treatHorizontalRuleAsPageBreak = value;
 					await this.plugin.saveSettings();
 				}));
 	}
