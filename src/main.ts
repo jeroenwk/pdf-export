@@ -23,7 +23,7 @@ const DEFAULT_SETTINGS: PDFExportSettings = {
 	includeImages: true,
 	showTitle: true,
 	pdfMargin: 10,
-	canvasScale: 2,
+	canvasScale: 1,
 	autoVerifyPDF: false,
 	treatHorizontalRuleAsPageBreak: false
 };
@@ -796,15 +796,16 @@ export default class PDFExportPlugin extends Plugin {
 		const pdfDimensions = pageManager.getJSPDFDimensions();
 		const isLandscape = pageManager.getIsLandscape();
 
-		// Create PDF with proper page dimensions
+		// Create PDF with proper page dimensions and compression
 		const pdf = new jsPDF({
 			orientation: isLandscape ? 'landscape' : 'portrait',
 			unit: 'mm',
-			format: pdfDimensions
+			format: pdfDimensions,
+			compress: true
 		});
 
-		// Convert canvas to data URL once
-		const canvasDataUrl = canvas.toDataURL('image/png');
+		// Convert canvas to data URL once with JPEG compression for better size
+		const canvasDataUrl = canvas.toDataURL('image/jpeg', 0.85);
 
 		// Add each page segment as a separate page
 		for (let i = 0; i < segments.length; i++) {
@@ -832,8 +833,8 @@ export default class PDFExportPlugin extends Plugin {
 				0, 0, canvasWidth, segment.height  // Destination rectangle
 			);
 
-			// Convert segment to data URL
-			const segmentDataUrl = segmentCanvas.toDataURL('image/png');
+			// Convert segment to data URL with JPEG compression
+			const segmentDataUrl = segmentCanvas.toDataURL('image/jpeg', 0.85);
 
 			// Calculate dimensions for this segment in mm
 			// Strategy: Use full page height, scale width proportionally
@@ -867,7 +868,7 @@ export default class PDFExportPlugin extends Plugin {
 			// Add the segment image to the current page
 			pdf.addImage(
 				segmentDataUrl,
-				'PNG',
+				'JPEG',
 				xOffset,
 				this.settings.pdfMargin,
 				segmentWidthMM,
