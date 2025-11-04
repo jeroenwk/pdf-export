@@ -42,16 +42,12 @@ const context = await esbuild.context({
 });
 
 if (prod) {
-	// Auto-increment patch version in manifest.json BEFORE building
+	// Read current version from manifest.json (already synced by version-bump.mjs)
 	const manifestPath = "manifest.json";
 	const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-	const versionParts = manifest.version.split('.');
-	versionParts[2] = String(parseInt(versionParts[2]) + 1); // Increment patch version
-	manifest.version = versionParts.join('.');
-	fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, '\t') + '\n');
-	console.log(`✓ Version bumped to ${manifest.version}`);
+	console.log(`✓ Building version ${manifest.version}`);
 
-	// Now build with the new version
+	// Build with current version
 	await context.rebuild();
 
 	// Copy to Obsidian plugins folder
