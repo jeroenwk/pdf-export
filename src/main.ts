@@ -685,18 +685,17 @@ export default class PDFExportPlugin extends Plugin {
 	async createPDFFromHTML(containerEl: HTMLElement, title: string): Promise<jsPDF> {
 		console.log('[FRAGMENT DEBUG] Starting Document Fragment Approach for PDF capture');
 
-		// Document Fragment Approach: Use minimal visibility instead of moving to visible area
-		// This prevents UI flash while still allowing html2canvas to capture content
-		console.log('[FRAGMENT DEBUG] Applying minimal visibility styling');
+		// Document Fragment Approach: Position off-screen to avoid UI interference
+		// Key insight: Position to the RIGHT (100vw) keeps it completely invisible
+		// No opacity manipulation needed - off-screen positioning does the job!
+		console.log('[FRAGMENT DEBUG] Applying off-screen positioning');
 		containerEl.style.position = 'fixed';
 		containerEl.style.top = '0px';
-		containerEl.style.left = '0px';
-		containerEl.style.opacity = '0.01';  // Nearly invisible to users
+		containerEl.style.left = '100vw';  // Position to the right, outside viewport
 		containerEl.style.pointerEvents = 'none';  // Prevent any interaction
-		containerEl.style.zIndex = '-9999';  // Below all UI elements
 		containerEl.style.visibility = 'visible';  // Must be visible for html2canvas
 
-		console.log('[FRAGMENT DEBUG] Container positioned with opacity: 0.01, z-index: -9999');
+		console.log('[FRAGMENT DEBUG] Container positioned at left: 100vw (off-screen right)');
 
 		// Wait for images to load
 		console.log('[FRAGMENT DEBUG] Waiting for images to load (2000ms)');
