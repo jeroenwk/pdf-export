@@ -112,7 +112,15 @@ info(`\nStep 5: Bumping ${bumpType} version...`);
 const versionOutput = exec(`npm version ${bumpType}`, true);
 // Extract just the version number (last line should be vX.Y.Z)
 const newVersion = versionOutput.split('\n').pop().trim();
-success(`Version bumped: ${oldVersion} → ${newVersion}`);
+// Remove 'v' prefix from npm version tag to match our convention
+const cleanVersion = newVersion.replace(/^v/, '');
+success(`Version bumped: ${oldVersion} → ${cleanVersion}`);
+
+// Step 5.1: Fix git tag - remove 'v' prefix and recreate without it
+info('\nStep 5.1: Fixing git tag format...');
+exec(`git tag -d ${newVersion}`, true); // Remove the v-prefixed tag
+exec(`git tag ${cleanVersion}`, true); // Create tag without v prefix
+success(`Git tag corrected: ${newVersion} → ${cleanVersion}`);
 
 // Step 6: Build and deploy
 info('\nStep 6: Building production bundle and deploying...');
@@ -153,8 +161,8 @@ const latestCommit = exec('git log -1 --oneline', true);
 log(`\n🏷️  Latest tag:    ${latestTag}`);
 log(`📝 Latest commit: ${latestCommit}`);
 
-if (latestTag !== newVersion) {
-	error(`\nTag mismatch! Expected ${newVersion}, got ${latestTag}`);
+if (latestTag !== cleanVersion) {
+	error(`\nTag mismatch! Expected ${cleanVersion}, got ${latestTag}`);
 	exit(1);
 }
 
@@ -175,13 +183,13 @@ try {
 header('Deployment Summary');
 
 log(`
-✅ Version:  ${oldVersion} → ${newVersion}
+✅ Version:  ${oldVersion} → ${cleanVersion}
 ✅ Build:    Successful
 ✅ Deploy:   Successful
 ✅ Git tag:  ${latestTag}
 ✅ Verified: All versions aligned
 
-🎉 Plugin version ${newVersion} is ready to use!
+🎉 Plugin version ${cleanVersion} is ready to use!
 `);
 
 log('Next steps (optional):', colors.yellow);
