@@ -1,6 +1,6 @@
 {
   "name": "pdf-export",
-  "version": "1.2.9",
+  "version": "1.2.10",
   "description": "Export Obsidian notes to PDF with image support for iOS",
   "main": "build/main.js",
   "type": "module",
