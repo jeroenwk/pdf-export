@@ -744,13 +744,17 @@ export default class PDFExportPlugin extends Plugin {
 
 					// Apply CSS to ensure proper aspect ratio and prevent overflow
 					// Force the image to the calculated content width (based on page size and scale)
-					img.style.width = `${scaledWidth}px`;
-					img.style.maxWidth = `${scaledWidth}px`;
-					img.style.height = 'auto';
-					img.style.display = 'block';
-					img.style.margin = '12pt auto';
-					img.style.overflow = 'visible';
-					img.style.pageBreakInside = 'avoid';
+					// Use cssText with !important to ensure styles are not overridden on iOS/mobile
+					img.style.cssText = `
+						width: ${scaledWidth}px !important;
+						max-width: ${scaledWidth}px !important;
+						height: auto !important;
+						display: block !important;
+						margin: 12pt auto !important;
+						overflow: visible !important;
+						page-break-inside: avoid !important;
+						break-inside: avoid !important;
+					`;
 
 					console.log(`[DEBUG] Image embedded: ${imagePath.name} (${(imageData.byteLength / 1024).toFixed(2)} KB)`);
 					console.log(`[DEBUG] Image styled with width: ${scaledWidth}px (${this.settings.imageScale}% of ${contentWidth}px)`);
@@ -865,13 +869,14 @@ export default class PDFExportPlugin extends Plugin {
 				color: #000 !important;
 			}
 			.markdown-preview-view img {
-				max-width: ${scaledImageWidth}px;
-				height: auto;
-				display: block;
-				margin: 12pt auto;
-				overflow: visible;
-				page-break-inside: avoid;
-				break-inside: avoid;
+				width: ${scaledImageWidth}px !important;
+				max-width: ${scaledImageWidth}px !important;
+				height: auto !important;
+				display: block !important;
+				margin: 12pt auto !important;
+				overflow: visible !important;
+				page-break-inside: avoid !important;
+				break-inside: avoid !important;
 			}
 			.markdown-preview-view table {
 				border-collapse: collapse;
