@@ -1,7 +1,7 @@
 {
 	"id": "pdf-export",
 	"name": "PDF Export",
-	"version": "1.2.2",
+	"version": "1.2.3",
 	"minAppVersion": "0.15.0",
 	"description": "Export notes to high-quality PDFs with proper image rendering and multi-page layout",
 	"author": "Jeroen de Zwart",
