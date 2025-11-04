@@ -506,11 +506,11 @@ export default class PDFExportPlugin extends Plugin {
 				console.log(`[PAGE BREAK DEBUG] Line ${i+1}: Quote block ended`);
 			}
 
-			// Check for horizontal rule (only exact triple dashes, not in code or quote blocks)
-			if (!inCodeBlock && !inQuoteBlock && trimmed === '---') {
+			// Check for horizontal rule (triple dashes or triple underscores, not in code or quote blocks)
+			if (!inCodeBlock && !inQuoteBlock && (trimmed === '---' || trimmed === '___')) {
 				horizontalRuleCount++;
 				pageBreakCount++;
-				console.log(`[PAGE BREAK DEBUG] Line ${i+1}: Found horizontal rule #${horizontalRuleCount}, replacing with page break marker`);
+				console.log(`[PAGE BREAK DEBUG] Line ${i+1}: Found horizontal rule (${trimmed}) #${horizontalRuleCount}, replacing with page break marker`);
 				// Replace with page break marker using a special div that will survive markdown rendering
 				processedLines.push('<div class="pdf-page-break" data-page-break="true"></div>');
 			} else {
@@ -1386,8 +1386,8 @@ class PDFExportSettingTab extends PluginSettingTab {
 
 		// Treat horizontal rule as page break
 		new Setting(containerEl)
-			.setName('Treat --- as page breaks')
-			.setDesc('Convert horizontal rules (---) to page breaks. Rules will be hidden and content will break to next page.')
+			.setName('Treat horizontal rules as page breaks')
+			.setDesc('Convert horizontal rules (--- or ___) to page breaks. Rules will be hidden and content will break to next page.')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.treatHorizontalRuleAsPageBreak)
 				.onChange(async (value) => {
