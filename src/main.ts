@@ -1,4 +1,4 @@
-import { Plugin, Notice, MarkdownRenderer, MarkdownView, Component, App, PluginSettingTab, Setting, Platform } from 'obsidian';
+import { Plugin, Notice, MarkdownRenderer, MarkdownView, Component, App, PluginSettingTab, Setting, Platform, addIcon } from 'obsidian';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { PageManager, ContentSegment } from './utils/PageManager';
@@ -53,6 +53,18 @@ export default class PDFExportPlugin extends Plugin {
 	async onload() {
 		console.log('Loading PDF Export plugin');
 
+		// Register custom PDF icon (scaled to 100x100 viewBox)
+		addIcon('pdf-export', `
+			<g transform="scale(4.1667)">
+				<!-- File shape (outlined) -->
+				<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" fill="none" stroke="currentColor" stroke-width="2"/>
+				<path d="M14 2v5a1 1 0 0 0 1 1h5" fill="none" stroke="currentColor" stroke-width="2"/>
+				<!-- Bold, solid PDF text -->
+				<text x="5" y="19" font-family="Arial, sans-serif" font-size="7" font-weight="900" fill="currentColor" stroke="none">PDF</text>
+			</g>
+		`);
+		console.log('[DEBUG] Custom PDF icon registered (bold text)');
+
 		await this.loadSettings();
 
 
@@ -66,7 +78,7 @@ export default class PDFExportPlugin extends Plugin {
 
 		// Add ribbon icon for export (if enabled in settings)
 		if (this.settings.showExportButton) {
-			this.exportRibbonIcon = this.addRibbonIcon('file-down', 'Export to PDF', () => {
+			this.exportRibbonIcon = this.addRibbonIcon('pdf-export', 'Export to PDF', () => {
 				this.exportToPDF();
 			});
 			console.log('[DEBUG] Export ribbon button added');
@@ -108,7 +120,7 @@ export default class PDFExportPlugin extends Plugin {
 		// Handle Export button
 		if (this.settings.showExportButton && !this.exportRibbonIcon) {
 			// Add export button if it doesn't exist
-			this.exportRibbonIcon = this.addRibbonIcon('file-down', 'Export to PDF', () => {
+			this.exportRibbonIcon = this.addRibbonIcon('pdf-export', 'Export to PDF', () => {
 				this.exportToPDF();
 			});
 			console.log('[DEBUG] Export ribbon button added');
