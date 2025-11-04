@@ -14,6 +14,8 @@ interface PDFExportSettings {
 	canvasScale: number;
 	imageScale: number;
 	treatHorizontalRuleAsPageBreak: boolean;
+	showExportButton: boolean;
+	showPrintButton: boolean;
 }
 
 const DEFAULT_SETTINGS: PDFExportSettings = {
@@ -24,7 +26,9 @@ const DEFAULT_SETTINGS: PDFExportSettings = {
 	pdfMargin: 10,
 	canvasScale: 1,
 	imageScale: 100,
-	treatHorizontalRuleAsPageBreak: false
+	treatHorizontalRuleAsPageBreak: false,
+	showExportButton: true,
+	showPrintButton: true
 };
 
 // Calculate optimal container/image width based on page size and margins
@@ -43,13 +47,15 @@ function calculateContentWidth(pageSize: 'a4' | 'letter', margin: number): numbe
 export default class PDFExportPlugin extends Plugin {
 	settings: PDFExportSettings;
 	lastExportedPDF: { buffer: ArrayBuffer; fileName: string } | null = null;
+	exportRibbonIcon: HTMLElement | null = null;
+	printRibbonIcon: HTMLElement | null = null;
 
 	async onload() {
 		console.log('Loading PDF Export plugin');
 
 		await this.loadSettings();
 
-		
+
 		// Add command to export PDF
 		this.addCommand({
 			id: 'export-to-pdf',
@@ -57,10 +63,28 @@ export default class PDFExportPlugin extends Plugin {
 			callback: () => this.exportToPDF()
 		});
 
-		
-		// Add ribbon icon
-		this.addRibbonIcon('file-down', 'Export to PDF', () => {
-			this.exportToPDF();
+
+		// Add ribbon icon for export (if enabled in settings)
+		if (this.settings.showExportButton) {
+			this.exportRibbonIcon = this.addRibbonIcon('file-down', 'Export to PDF', () => {
+				this.exportToPDF();
+			});
+			console.log('[DEBUG] Export ribbon button added');
+		}
+
+		// Add ribbon icon for print/share (if enabled in settings)
+		if (this.settings.showPrintButton) {
+			this.printRibbonIcon = this.addRibbonIcon('printer', 'Print PDF', () => {
+				this.printPDF();
+			});
+			console.log('[DEBUG] Print ribbon button added');
+		}
+
+		// Add command to print PDF
+		this.addCommand({
+			id: 'print-pdf',
+			name: 'Print PDF',
+			callback: () => this.printPDF()
 		});
 
 		// Add settings tab
@@ -73,6 +97,41 @@ export default class PDFExportPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+		this.refreshRibbonButtons();
+	}
+
+	refreshRibbonButtons() {
+		console.log('[DEBUG] Refreshing ribbon buttons');
+		console.log(`[DEBUG] showExportButton: ${this.settings.showExportButton}`);
+		console.log(`[DEBUG] showPrintButton: ${this.settings.showPrintButton}`);
+
+		// Handle Export button
+		if (this.settings.showExportButton && !this.exportRibbonIcon) {
+			// Add export button if it doesn't exist
+			this.exportRibbonIcon = this.addRibbonIcon('file-down', 'Export to PDF', () => {
+				this.exportToPDF();
+			});
+			console.log('[DEBUG] Export ribbon button added');
+		} else if (!this.settings.showExportButton && this.exportRibbonIcon) {
+			// Remove export button if it exists
+			this.exportRibbonIcon.remove();
+			this.exportRibbonIcon = null;
+			console.log('[DEBUG] Export ribbon button removed');
+		}
+
+		// Handle Print button
+		if (this.settings.showPrintButton && !this.printRibbonIcon) {
+			// Add print button if it doesn't exist
+			this.printRibbonIcon = this.addRibbonIcon('printer', 'Print PDF', () => {
+				this.printPDF();
+			});
+			console.log('[DEBUG] Print ribbon button added');
+		} else if (!this.settings.showPrintButton && this.printRibbonIcon) {
+			// Remove print button if it exists
+			this.printRibbonIcon.remove();
+			this.printRibbonIcon = null;
+			console.log('[DEBUG] Print ribbon button removed');
+		}
 	}
 
 	async exportToPDF() {
@@ -165,6 +224,224 @@ export default class PDFExportPlugin extends Plugin {
 		} catch (error) {
 			console.error('PDF export failed:', error);
 			new Notice(`Export failed: ${error.message}`);
+		}
+	}
+
+	async printPDF() {
+		console.log(`========================================`);
+		console.log(`PDF PRINT PLUGIN v${manifest.version}`);
+		console.log(`========================================`);
+		console.log(`[PRINT DEBUG] Starting printPDF`);
+		console.log(`[PRINT DEBUG] Platform: ${Platform.isMobile ? 'Mobile' : 'Desktop'}`);
+		console.log(`[PRINT DEBUG] Is iOS: ${Platform.isIosApp}`);
+
+		try {
+			// Get the active file
+			const activeFile = this.app.workspace.getActiveFile();
+			if (!activeFile) {
+				new Notice('No active file to print');
+				return;
+			}
+
+			// Check if it's a markdown file
+			if (activeFile.extension !== 'md') {
+				new Notice('Active file is not a markdown file');
+				return;
+			}
+
+			console.log(`[PRINT DEBUG] Printing file: ${activeFile.path}`);
+			new Notice('Generating PDF for printing...');
+
+			// Read the note content
+			const content = await this.app.vault.read(activeFile);
+
+			// Render markdown to HTML
+			const containerEl = await this.renderMarkdownToHTML(content, activeFile.path, activeFile.basename);
+
+			// Apply PDF-friendly styles
+			this.applyPDFStyles(containerEl);
+
+			// Process and embed images from vault (if enabled)
+			if (this.settings.includeImages) {
+				await this.processImages(containerEl, activeFile.path);
+			} else {
+				// Remove all images if includeImages is false
+				const images = containerEl.querySelectorAll('img');
+				images.forEach(img => img.remove());
+			}
+
+			console.log(`[PRINT DEBUG] About to create PDF from HTML`);
+			// Create PDF from HTML
+			const pdf = await this.createPDFFromHTML(containerEl, activeFile.basename);
+
+			// Get PDF as blob
+			const pdfBlob = pdf.output('blob');
+			const arrayBuffer = await pdfBlob.arrayBuffer();
+
+			// Clean up
+			containerEl.remove();
+
+			// Platform-specific handling
+			if (Platform.isMobile) {
+				console.log(`[PRINT DEBUG] Mobile platform detected - using share sheet`);
+				await this.shareOnMobile(arrayBuffer, activeFile.basename);
+			} else {
+				console.log(`[PRINT DEBUG] Desktop platform detected - using print dialog`);
+				await this.printOnDesktop(arrayBuffer, activeFile.basename);
+			}
+
+		} catch (error) {
+			console.error('PDF print failed:', error);
+			new Notice(`Print failed: ${error.message}`);
+		}
+	}
+
+	async printOnDesktop(arrayBuffer: ArrayBuffer, fileName: string) {
+		console.log(`[PRINT DEBUG] printOnDesktop called for: ${fileName}`);
+
+		try {
+			// Create a temporary blob URL
+			const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+			const url = URL.createObjectURL(blob);
+
+			console.log(`[PRINT DEBUG] Created blob URL: ${url}`);
+			console.log(`[PRINT DEBUG] PDF size: ${(arrayBuffer.byteLength / 1024).toFixed(2)} KB`);
+
+			// Create an iframe with proper dimensions but positioned off-screen
+			// Key insight: The iframe needs real dimensions for PDF to render
+			const iframe = document.createElement('iframe');
+			iframe.style.position = 'absolute';
+			iframe.style.top = '-10000px';
+			iframe.style.left = '-10000px';
+			iframe.style.width = '794px';  // A4 width in pixels at 96 DPI
+			iframe.style.height = '1123px'; // A4 height in pixels at 96 DPI
+			iframe.style.border = 'none';
+			iframe.src = url;
+
+			console.log(`[PRINT DEBUG] Created iframe with A4 dimensions, positioned off-screen`);
+
+			// Wait for the iframe to load
+			iframe.onload = () => {
+				console.log(`[PRINT DEBUG] Iframe loaded`);
+
+				// Wait for PDF to fully render in the iframe
+				setTimeout(() => {
+					try {
+						const contentWindow = iframe.contentWindow;
+
+						if (contentWindow) {
+							console.log(`[PRINT DEBUG] Focusing and triggering print`);
+							contentWindow.focus();
+							contentWindow.print();
+							console.log(`[PRINT DEBUG] Print triggered`);
+
+							// Clean up after printing (longer delay to ensure print dialog works)
+							setTimeout(() => {
+								URL.revokeObjectURL(url);
+								iframe.remove();
+								console.log(`[PRINT DEBUG] Cleaned up`);
+							}, 10000); // 10 seconds to allow printing
+						} else {
+							console.error('[PRINT DEBUG] Cannot access iframe content');
+							new Notice('Could not access PDF for printing');
+							URL.revokeObjectURL(url);
+							iframe.remove();
+						}
+					} catch (error) {
+						console.error('[PRINT DEBUG] Error:', error);
+						new Notice('Print failed. Try using Export to PDF instead.');
+						URL.revokeObjectURL(url);
+						iframe.remove();
+					}
+				}, 1500); // Increased delay to ensure PDF is fully loaded
+			};
+
+			iframe.onerror = () => {
+				console.error('[PRINT DEBUG] Failed to load PDF');
+				new Notice('Failed to load PDF for printing');
+				URL.revokeObjectURL(url);
+				iframe.remove();
+			};
+
+			document.body.appendChild(iframe);
+			console.log(`[PRINT DEBUG] Iframe added to DOM`);
+
+		} catch (error) {
+			console.error('[PRINT DEBUG] Error in printOnDesktop:', error);
+			new Notice(`Print failed: ${error.message}`);
+		}
+	}
+
+	async shareOnMobile(arrayBuffer: ArrayBuffer, fileName: string) {
+		console.log(`[PRINT DEBUG] shareOnMobile called for: ${fileName}`);
+		console.log(`[PRINT DEBUG] Platform.isIosApp: ${Platform.isIosApp}`);
+		console.log(`[PRINT DEBUG] Platform.isMobileApp: ${Platform.isMobileApp}`);
+
+		try {
+			// Simple approach: Save to vault and let user access via Files app
+			const adapter = this.app.vault.adapter;
+
+			// Create a .temp folder in the vault root for temporary PDFs
+			const tempFolder = '.temp';
+
+			console.log(`[PRINT DEBUG] Ensuring temp folder exists: ${tempFolder}`);
+			if (!await adapter.exists(tempFolder)) {
+				await adapter.mkdir(tempFolder);
+				console.log(`[PRINT DEBUG] Created temp folder: ${tempFolder}`);
+			}
+
+			// Write the PDF to temp folder
+			const tempPath = `${tempFolder}/${fileName}.pdf`;
+			console.log(`[PRINT DEBUG] Writing PDF to: ${tempPath}`);
+			await adapter.writeBinary(tempPath, arrayBuffer);
+
+			console.log(`[PRINT DEBUG] PDF written successfully to: ${tempPath}`);
+
+			// On iOS, directly open the PDF to trigger share sheet
+			if (Platform.isMobileApp) {
+				console.log(`[PRINT DEBUG] Mobile app detected, opening PDF directly`);
+
+				try {
+					// Use Obsidian's built-in file opening to trigger iOS share sheet
+					console.log(`[PRINT DEBUG] Opening PDF via app.openWithDefaultApp: ${tempPath}`);
+					await (this.app as any).openWithDefaultApp(tempPath);
+					console.log(`[PRINT DEBUG] PDF opened successfully, share sheet should appear`);
+				} catch (error) {
+					console.error('[PRINT DEBUG] Error opening PDF:', error);
+					new Notice(`Could not open PDF: ${error.message}`);
+				}
+
+			} else {
+				// Desktop fallback - create download link
+				console.log(`[PRINT DEBUG] Desktop detected in mobile handler, creating download link`);
+				const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement('a');
+				a.href = url;
+				a.download = `${fileName}.pdf`;
+				document.body.appendChild(a);
+				a.click();
+				document.body.removeChild(a);
+				URL.revokeObjectURL(url);
+
+				new Notice('PDF download started');
+			}
+
+			// Clean up temp file after a delay
+			setTimeout(async () => {
+				try {
+					if (await adapter.exists(tempPath)) {
+						await adapter.remove(tempPath);
+						console.log(`[PRINT DEBUG] Cleaned up temp file: ${tempPath}`);
+					}
+				} catch (error) {
+					console.warn(`[PRINT DEBUG] Could not clean up temp file: ${error}`);
+				}
+			}, 60000); // 60 seconds delay (longer for user to share)
+
+		} catch (error) {
+			console.error('[PRINT DEBUG] Error in shareOnMobile:', error);
+			new Notice(`Share failed: ${error.message}`);
 		}
 	}
 
@@ -1103,6 +1380,31 @@ class PDFExportSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.treatHorizontalRuleAsPageBreak)
 				.onChange(async (value) => {
 					this.plugin.settings.treatHorizontalRuleAsPageBreak = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Section header for UI settings
+		containerEl.createEl('h3', { text: 'User Interface' });
+
+		// Show Export button
+		new Setting(containerEl)
+			.setName('Show Export button')
+			.setDesc('Display the Export to PDF button in the sidebar ribbon')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.showExportButton)
+				.onChange(async (value) => {
+					this.plugin.settings.showExportButton = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Show Print button
+		new Setting(containerEl)
+			.setName('Show Print button')
+			.setDesc('Display the Print PDF button in the sidebar ribbon')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.showPrintButton)
+				.onChange(async (value) => {
+					this.plugin.settings.showPrintButton = value;
 					await this.plugin.saveSettings();
 				}));
 	}
