@@ -2,6 +2,7 @@ import { Plugin, Notice, MarkdownRenderer, MarkdownView, Component, App, PluginS
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { PageManager, ContentSegment } from './utils/PageManager';
+import { parseFrontmatter, generatePropertiesTable } from './utils/FrontmatterParser';
 // @ts-ignore
 import manifest from '../manifest.json';
 
@@ -16,6 +17,8 @@ interface PDFExportSettings {
 	treatHorizontalRuleAsPageBreak: boolean;
 	showExportButton: boolean;
 	showPrintButton: boolean;
+	includePropertiesTable: boolean;
+	propertiesTablePosition: 'top' | 'bottom';
 }
 
 const DEFAULT_SETTINGS: PDFExportSettings = {
@@ -28,7 +31,9 @@ const DEFAULT_SETTINGS: PDFExportSettings = {
 	imageScale: 100,
 	treatHorizontalRuleAsPageBreak: false,
 	showExportButton: true,
-	showPrintButton: true
+	showPrintButton: true,
+	includePropertiesTable: true,
+	propertiesTablePosition: 'top'
 };
 
 // Calculate optimal container/image width based on page size and margins
@@ -43,6 +48,7 @@ function calculateContentWidth(pageSize: 'a4' | 'letter', margin: number): numbe
 	const contentWidthMM = format.width - (2 * margin);
 	return Math.round(contentWidthMM * PIXELS_PER_MM);
 }
+
 
 export default class PDFExportPlugin extends Plugin {
 	settings: PDFExportSettings;
@@ -173,8 +179,37 @@ export default class PDFExportPlugin extends Plugin {
 			// Read the note content
 			const content = await this.app.vault.read(activeFile);
 
-			// Render markdown to HTML
-			const containerEl = await this.renderMarkdownToHTML(content, activeFile.path, activeFile.basename);
+			// Parse frontmatter and extract properties
+			console.log('[PROPERTIES DEBUG] Starting frontmatter parsing in exportToPDF');
+			const { properties, content: contentWithoutFrontmatter } = parseFrontmatter(content);
+			console.log(`[PROPERTIES DEBUG] Frontmatter parsed successfully. Properties: ${JSON.stringify(properties)}`);
+			console.log(`[PROPERTIES DEBUG] Content length without frontmatter: ${contentWithoutFrontmatter.length}`);
+
+			// Render markdown to HTML (using content without frontmatter)
+			const containerEl = await this.renderMarkdownToHTML(contentWithoutFrontmatter, activeFile.path, activeFile.basename);
+
+			// Add properties table if enabled and properties exist
+			if (this.settings.includePropertiesTable && Object.keys(properties).length > 0) {
+				console.log('[PROPERTIES DEBUG] Adding properties table to PDF');
+				const propertiesTableHTML = generatePropertiesTable(properties);
+
+				if (propertiesTableHTML) {
+					const propertiesDiv = document.createElement('div');
+					propertiesDiv.innerHTML = propertiesTableHTML;
+
+					if (this.settings.propertiesTablePosition === 'top') {
+						// Insert at the beginning
+						containerEl.insertBefore(propertiesDiv, containerEl.firstChild);
+						console.log('[PROPERTIES DEBUG] Properties table added to top of content');
+					} else {
+						// Add to the end
+						containerEl.appendChild(propertiesDiv);
+						console.log('[PROPERTIES DEBUG] Properties table added to bottom of content');
+					}
+				}
+			} else {
+				console.log('[PROPERTIES DEBUG] Properties table not added - either disabled or no properties found');
+			}
 
 			// Apply PDF-friendly styles
 			this.applyPDFStyles(containerEl);
@@ -267,8 +302,36 @@ export default class PDFExportPlugin extends Plugin {
 			// Read the note content
 			const content = await this.app.vault.read(activeFile);
 
-			// Render markdown to HTML
-			const containerEl = await this.renderMarkdownToHTML(content, activeFile.path, activeFile.basename);
+			// Parse frontmatter and extract properties
+			console.log('[PROPERTIES DEBUG] Starting frontmatter parsing in printPDF');
+			const { properties, content: contentWithoutFrontmatter } = parseFrontmatter(content);
+			console.log(`[PROPERTIES DEBUG] Frontmatter parsed successfully. Properties: ${JSON.stringify(properties)}`);
+
+			// Render markdown to HTML (using content without frontmatter)
+			const containerEl = await this.renderMarkdownToHTML(contentWithoutFrontmatter, activeFile.path, activeFile.basename);
+
+			// Add properties table if enabled and properties exist
+			if (this.settings.includePropertiesTable && Object.keys(properties).length > 0) {
+				console.log('[PROPERTIES DEBUG] Adding properties table to print PDF');
+				const propertiesTableHTML = generatePropertiesTable(properties);
+
+				if (propertiesTableHTML) {
+					const propertiesDiv = document.createElement('div');
+					propertiesDiv.innerHTML = propertiesTableHTML;
+
+					if (this.settings.propertiesTablePosition === 'top') {
+						// Insert at the beginning
+						containerEl.insertBefore(propertiesDiv, containerEl.firstChild);
+						console.log('[PROPERTIES DEBUG] Properties table added to top of print content');
+					} else {
+						// Add to the end
+						containerEl.appendChild(propertiesDiv);
+						console.log('[PROPERTIES DEBUG] Properties table added to bottom of print content');
+					}
+				}
+			} else {
+				console.log('[PROPERTIES DEBUG] Properties table not added to print - either disabled or no properties found');
+			}
 
 			// Apply PDF-friendly styles
 			this.applyPDFStyles(containerEl);
@@ -1422,6 +1485,33 @@ class PDFExportSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.settings.showPrintButton)
 				.onChange(async (value) => {
 					this.plugin.settings.showPrintButton = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Properties Table Section Header
+		containerEl.createEl('h3', { text: 'Properties Table Settings' });
+
+		// Include Properties Table
+		new Setting(containerEl)
+			.setName('Include properties table')
+			.setDesc('Add a formatted table with note properties (frontmatter) to the PDF export')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.includePropertiesTable)
+				.onChange(async (value) => {
+					this.plugin.settings.includePropertiesTable = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Properties Table Position
+		new Setting(containerEl)
+			.setName('Properties table position')
+			.setDesc('Where to place the properties table in the PDF')
+			.addDropdown(dropdown => dropdown
+				.addOption('top', 'Top (before content)')
+				.addOption('bottom', 'Bottom (after content)')
+				.setValue(this.plugin.settings.propertiesTablePosition)
+				.onChange(async (value: 'top' | 'bottom') => {
+					this.plugin.settings.propertiesTablePosition = value;
 					await this.plugin.saveSettings();
 				}));
 	}
