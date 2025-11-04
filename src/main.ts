@@ -2,7 +2,7 @@ import { Plugin, Notice, MarkdownRenderer, MarkdownView, Component, App, PluginS
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { PageManager, ContentSegment } from './utils/PageManager';
-import { parseFrontmatter, generatePropertiesTable } from './utils/FrontmatterParser';
+import { parseFrontmatter, generatePropertiesTable, insertPropertiesTableAfterTitle } from './utils/FrontmatterParser';
 // @ts-ignore
 import manifest from '../manifest.json';
 
@@ -18,7 +18,7 @@ interface PDFExportSettings {
 	showExportButton: boolean;
 	showPrintButton: boolean;
 	includePropertiesTable: boolean;
-	propertiesTablePosition: 'top' | 'bottom';
+	propertiesTablePosition: 'after-title' | 'bottom';
 }
 
 const DEFAULT_SETTINGS: PDFExportSettings = {
@@ -33,7 +33,7 @@ const DEFAULT_SETTINGS: PDFExportSettings = {
 	showExportButton: true,
 	showPrintButton: true,
 	includePropertiesTable: true,
-	propertiesTablePosition: 'top'
+	propertiesTablePosition: 'after-title'
 };
 
 // Calculate optimal container/image width based on page size and margins
@@ -194,15 +194,14 @@ export default class PDFExportPlugin extends Plugin {
 				const propertiesTableHTML = generatePropertiesTable(properties);
 
 				if (propertiesTableHTML) {
-					const propertiesDiv = document.createElement('div');
-					propertiesDiv.innerHTML = propertiesTableHTML;
-
-					if (this.settings.propertiesTablePosition === 'top') {
-						// Insert at the beginning
-						containerEl.insertBefore(propertiesDiv, containerEl.firstChild);
-						console.log('[PROPERTIES DEBUG] Properties table added to top of content');
+					if (this.settings.propertiesTablePosition === 'after-title') {
+						// Insert after title
+						insertPropertiesTableAfterTitle(containerEl, propertiesTableHTML);
+						console.log('[PROPERTIES DEBUG] Properties table added after title');
 					} else {
 						// Add to the end
+						const propertiesDiv = document.createElement('div');
+						propertiesDiv.innerHTML = propertiesTableHTML;
 						containerEl.appendChild(propertiesDiv);
 						console.log('[PROPERTIES DEBUG] Properties table added to bottom of content');
 					}
@@ -316,15 +315,14 @@ export default class PDFExportPlugin extends Plugin {
 				const propertiesTableHTML = generatePropertiesTable(properties);
 
 				if (propertiesTableHTML) {
-					const propertiesDiv = document.createElement('div');
-					propertiesDiv.innerHTML = propertiesTableHTML;
-
-					if (this.settings.propertiesTablePosition === 'top') {
-						// Insert at the beginning
-						containerEl.insertBefore(propertiesDiv, containerEl.firstChild);
-						console.log('[PROPERTIES DEBUG] Properties table added to top of print content');
+					if (this.settings.propertiesTablePosition === 'after-title') {
+						// Insert after title
+						insertPropertiesTableAfterTitle(containerEl, propertiesTableHTML);
+						console.log('[PROPERTIES DEBUG] Properties table added after title in print');
 					} else {
 						// Add to the end
+						const propertiesDiv = document.createElement('div');
+						propertiesDiv.innerHTML = propertiesTableHTML;
 						containerEl.appendChild(propertiesDiv);
 						console.log('[PROPERTIES DEBUG] Properties table added to bottom of print content');
 					}
@@ -1507,10 +1505,10 @@ class PDFExportSettingTab extends PluginSettingTab {
 			.setName('Properties table position')
 			.setDesc('Where to place the properties table in the PDF')
 			.addDropdown(dropdown => dropdown
-				.addOption('top', 'Top (before content)')
+				.addOption('after-title', 'After title')
 				.addOption('bottom', 'Bottom (after content)')
 				.setValue(this.plugin.settings.propertiesTablePosition)
-				.onChange(async (value: 'top' | 'bottom') => {
+				.onChange(async (value: 'after-title' | 'bottom') => {
 					this.plugin.settings.propertiesTablePosition = value;
 					await this.plugin.saveSettings();
 				}));

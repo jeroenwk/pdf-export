@@ -60,6 +60,26 @@ export function parseFrontmatter(markdown: string): ParsedFrontmatter {
 	return { properties, content: contentWithoutFrontmatter };
 }
 
+// Helper function to insert properties table after title
+export function insertPropertiesTableAfterTitle(containerEl: HTMLElement, propertiesTableHTML: string): void {
+	console.log('[PROPERTIES DEBUG] Inserting properties table after title');
+
+	const propertiesDiv = document.createElement('div');
+	propertiesDiv.innerHTML = propertiesTableHTML;
+
+	// Try to find h1, h2, h3, or any heading element
+	const titleElement = containerEl.querySelector('h1, h2, h3, h4, h5, h6');
+
+	if (titleElement) {
+		console.log(`[PROPERTIES DEBUG] Found title element: ${titleElement.tagName} - inserting after it`);
+		titleElement.parentNode?.insertBefore(propertiesDiv, titleElement.nextSibling);
+	} else {
+		// If no title found, insert at the beginning
+		console.log('[PROPERTIES DEBUG] No title element found - inserting at beginning');
+		containerEl.insertBefore(propertiesDiv, containerEl.firstChild);
+	}
+}
+
 // Generate HTML table from properties
 export function generatePropertiesTable(properties: Record<string, any>): string {
 	console.log('[PROPERTIES DEBUG] Generating properties table HTML');
@@ -76,22 +96,19 @@ export function generatePropertiesTable(properties: Record<string, any>): string
 			console.log(`[PROPERTIES DEBUG] Table row: ${displayKey} = ${value}`);
 			return `
 				<tr>
-					<td style="font-weight: 600; color: #666; padding: 6px 12px; border-bottom: 1px solid #ddd; width: 40%;">${displayKey}</td>
-					<td style="color: #333; padding: 6px 12px; border-bottom: 1px solid #ddd; width: 60%;">${value}</td>
+					<td style="font-weight: 600; color: #666; padding: 4px 8px; font-size: 11px; width: 40%;">${displayKey}:</td>
+					<td style="color: #333; padding: 4px 8px; font-size: 11px; width: 60%;">${value}</td>
 				</tr>
 			`;
 		})
 		.join('');
 
 	const tableHTML = `
-		<div class="properties-table-container" style="margin: 20px 0; padding: 16px; background-color: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 6px;">
-			<h3 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: #444; text-transform: uppercase; letter-spacing: 0.5px;">Properties</h3>
-			<table class="properties-table" style="width: 100%; border-collapse: collapse; font-size: 12px; border-radius: 4px; overflow: hidden;">
-				<tbody>
-					${propertyRows}
-				</tbody>
-			</table>
-		</div>
+		<table class="properties-table" style="width: 100%; border-collapse: collapse; margin: 8px 0 16px 0; font-size: 11px;">
+			<tbody>
+				${propertyRows}
+			</tbody>
+		</table>
 	`;
 
 	console.log('[PROPERTIES DEBUG] Properties table HTML generated successfully');
