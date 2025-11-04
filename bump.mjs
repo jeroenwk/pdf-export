@@ -89,7 +89,9 @@ log(`  Current version: ${oldVersion}`);
 
 // Step 3: Bump version
 info(`\nStep 3: Bumping ${bumpType} version...`);
-const newVersion = exec(`npm version ${bumpType}`, true);
+const versionOutput = exec(`npm version ${bumpType}`, true);
+// Extract just the version number (last line should be vX.Y.Z)
+const newVersion = versionOutput.split('\n').pop().trim();
 success(`Version bumped: ${oldVersion} → ${newVersion}`);
 
 // Step 4: Build and deploy
