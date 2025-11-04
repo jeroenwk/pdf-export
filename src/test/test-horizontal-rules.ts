@@ -1,6 +1,7 @@
 /**
- * Test script to verify horizontal rule (--- and ___) detection
- * Tests that both --- and ___ are treated as page breaks when the feature is enabled
+ * Test script to verify page break marker (___) detection
+ * Tests that ONLY ___ is treated as page breaks when the feature is enabled
+ * --- should remain as horizontal lines
  */
 
 const testContent = `---
@@ -62,11 +63,11 @@ function preprocessMarkdownForPageBreaks(content: string): string {
 			inQuoteBlock = false;
 		}
 
-		// Check for horizontal rule (triple dashes or triple underscores, not in code or quote blocks)
-		if (!inCodeBlock && !inQuoteBlock && (trimmed === '---' || trimmed === '___')) {
+		// Check for page break marker (triple underscores only, not in code or quote blocks)
+		if (!inCodeBlock && !inQuoteBlock && trimmed === '___') {
 			horizontalRuleCount++;
 			pageBreakCount++;
-			console.log(`[TEST] Line ${i+1}: Found horizontal rule (${trimmed}) #${horizontalRuleCount}, would replace with page break marker`);
+			console.log(`[TEST] Line ${i+1}: Found page break marker (___) #${horizontalRuleCount}, would replace with page break marker`);
 			processedLines.push('<div class="pdf-page-break" data-page-break="true"></div>');
 		} else {
 			processedLines.push(line);
@@ -81,9 +82,10 @@ function preprocessMarkdownForPageBreaks(content: string): string {
 
 // Run the test
 console.log('========================================');
-console.log('HORIZONTAL RULE DETECTION TEST');
+console.log('PAGE BREAK MARKER (___) DETECTION TEST');
 console.log('========================================');
-console.log('Testing content with both --- and ___ horizontal rules\n');
+console.log('Testing that ONLY ___ is treated as page break\n');
+console.log('--- should remain as horizontal lines\n');
 
 const processed = preprocessMarkdownForPageBreaks(testContent);
 
@@ -95,8 +97,8 @@ console.log(testContent);
 console.log('\n--- PROCESSED RESULT ---\n');
 console.log(processed);
 console.log('\n========================================');
-console.log('Expected: Should detect 2 horizontal rules');
-console.log('- Line 9: --- (after frontmatter and tags)');
-console.log('- Line 17: ___ (before second image)');
-console.log('Note: Lines 1-5 are frontmatter and should NOT be treated as page breaks');
+console.log('Expected: Should detect ONLY 1 page break marker');
+console.log('- Line 17: ___ (before second image) - SHOULD be converted');
+console.log('- Line 9: --- (after frontmatter and tags) - should REMAIN as horizontal line');
+console.log('- Lines 1-5: --- frontmatter delimiters - should REMAIN unchanged');
 console.log('========================================');
