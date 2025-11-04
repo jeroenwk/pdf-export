@@ -683,19 +683,30 @@ export default class PDFExportPlugin extends Plugin {
 	}
 
 	async createPDFFromHTML(containerEl: HTMLElement, title: string): Promise<jsPDF> {
-		// Convert HTML to canvas using html2canvas
-		// Ensure container is fully rendered and visible for accurate height calculation
-		containerEl.style.position = 'absolute';
-		containerEl.style.left = '0px';
+		console.log('[FRAGMENT DEBUG] Starting Document Fragment Approach for PDF capture');
+
+		// Document Fragment Approach: Use minimal visibility instead of moving to visible area
+		// This prevents UI flash while still allowing html2canvas to capture content
+		console.log('[FRAGMENT DEBUG] Applying minimal visibility styling');
+		containerEl.style.position = 'fixed';
 		containerEl.style.top = '0px';
-		containerEl.style.visibility = 'visible';
+		containerEl.style.left = '0px';
+		containerEl.style.opacity = '0.01';  // Nearly invisible to users
+		containerEl.style.pointerEvents = 'none';  // Prevent any interaction
+		containerEl.style.zIndex = '-9999';  // Below all UI elements
+		containerEl.style.visibility = 'visible';  // Must be visible for html2canvas
+
+		console.log('[FRAGMENT DEBUG] Container positioned with opacity: 0.01, z-index: -9999');
 
 		// Wait for images to load
+		console.log('[FRAGMENT DEBUG] Waiting for images to load (2000ms)');
 		await new Promise(resolve => setTimeout(resolve, 2000));
 
 		// Force a reflow to ensure accurate dimensions
+		console.log('[FRAGMENT DEBUG] Forcing layout reflow');
 		containerEl.offsetHeight;
 
+		console.log('[FRAGMENT DEBUG] Starting html2canvas capture');
 		const canvas = await html2canvas(containerEl, {
 			scale: this.settings.canvasScale,
 			useCORS: true, // For external images
@@ -709,15 +720,38 @@ export default class PDFExportPlugin extends Plugin {
 			windowWidth: containerEl.scrollWidth,
 			windowHeight: containerEl.scrollHeight
 		});
+		console.log('[FRAGMENT DEBUG] html2canvas capture complete');
 
 		// Get canvas dimensions directly
 		const canvasWidth = canvas.width;
 		const canvasHeight = canvas.height;
 
 		// Debug logging
-		console.log(`Canvas dimensions: ${canvasWidth}x${canvasHeight} pixels`);
-		console.log(`Container scrollHeight: ${containerEl.scrollHeight}px`);
-		console.log(`Container scrollWidth: ${containerEl.scrollWidth}px`);
+		console.log(`[FRAGMENT DEBUG] Canvas dimensions: ${canvasWidth}x${canvasHeight} pixels`);
+		console.log(`[FRAGMENT DEBUG] Container scrollHeight: ${containerEl.scrollHeight}px`);
+		console.log(`[FRAGMENT DEBUG] Container scrollWidth: ${containerEl.scrollWidth}px`);
+
+		// Validate capture quality
+		const quality = this.validateCaptureQuality(canvas);
+		console.log(`[FRAGMENT DEBUG] ========================================`);
+		console.log(`[FRAGMENT DEBUG] CAPTURE QUALITY METRICS`);
+		console.log(`[FRAGMENT DEBUG] ========================================`);
+		console.log(`[FRAGMENT DEBUG] Content Coverage: ${quality.contentPercentage.toFixed(2)}%`);
+		console.log(`[FRAGMENT DEBUG] Total Pixels: ${quality.totalPixels}`);
+		console.log(`[FRAGMENT DEBUG] Content Pixels: ${quality.contentPixels}`);
+		console.log(`[FRAGMENT DEBUG] White Pixels: ${quality.whitePixels}`);
+		console.log(`[FRAGMENT DEBUG] Transparent Pixels: ${quality.transparentPixels}`);
+		console.log(`[FRAGMENT DEBUG] Quality Rating: ${quality.rating}`);
+		console.log(`[FRAGMENT DEBUG] ========================================`);
+
+		if (quality.contentPercentage < 5) {
+			console.warn('[FRAGMENT DEBUG] ⚠️ WARNING: Low content capture detected!');
+			console.warn('[FRAGMENT DEBUG] This may indicate the Document Fragment approach needs adjustment');
+		} else if (quality.contentPercentage > 80) {
+			console.log('[FRAGMENT DEBUG] ✅ Excellent content capture!');
+		} else {
+			console.log('[FRAGMENT DEBUG] ✓ Acceptable content capture');
+		}
 
 		// Check if we have page break markers to handle
 		const pageBreakMarkers = containerEl.querySelectorAll('.pdf-page-break-marker[data-page-break-marker="true"]');
@@ -865,7 +899,81 @@ export default class PDFExportPlugin extends Plugin {
 		return pdf;
 	}
 
-	
+	// Validate the quality of canvas capture
+	validateCaptureQuality(canvas: HTMLCanvasElement): {
+		contentPixels: number;
+		whitePixels: number;
+		transparentPixels: number;
+		totalPixels: number;
+		contentPercentage: number;
+		rating: string;
+	} {
+		const ctx = canvas.getContext('2d');
+		if (!ctx) {
+			return {
+				contentPixels: 0,
+				whitePixels: 0,
+				transparentPixels: 0,
+				totalPixels: 0,
+				contentPercentage: 0,
+				rating: 'ERROR: Cannot get canvas context'
+			};
+		}
+
+		const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+		const data = imageData.data;
+
+		let contentPixels = 0;
+		let whitePixels = 0;
+		let transparentPixels = 0;
+		const totalPixels = data.length / 4;
+
+		for (let i = 0; i < data.length; i += 4) {
+			const r = data[i];
+			const g = data[i + 1];
+			const b = data[i + 2];
+			const a = data[i + 3];
+
+			// Check if pixel is transparent
+			if (a < 10) {
+				transparentPixels++;
+			}
+			// Check if pixel is white (or very close to white)
+			else if (r > 250 && g > 250 && b > 250) {
+				whitePixels++;
+			}
+			// Otherwise it's content
+			else {
+				contentPixels++;
+			}
+		}
+
+		const contentPercentage = (contentPixels / totalPixels) * 100;
+
+		let rating: string;
+		if (contentPercentage < 1) {
+			rating = 'CRITICAL - Almost no content captured';
+		} else if (contentPercentage < 5) {
+			rating = 'POOR - Very low content capture';
+		} else if (contentPercentage < 20) {
+			rating = 'FAIR - Low content capture';
+		} else if (contentPercentage < 50) {
+			rating = 'GOOD - Acceptable content capture';
+		} else {
+			rating = 'EXCELLENT - High content capture';
+		}
+
+		return {
+			contentPixels,
+			whitePixels,
+			transparentPixels,
+			totalPixels,
+			contentPercentage,
+			rating
+		};
+	}
+
+
 	onunload() {
 		console.log('Unloading PDF Export plugin');
 	}

@@ -90,31 +90,12 @@ Instead of relying solely on document fragments, we'll use a hybrid approach:
 
 ## Implementation Plan
 
-### Phase 1: Baseline Restoration
-
-**Objective**: Start from v1.1.3 stable baseline
-**Duration**: 1 day
-**Success Criteria**: Clean starting point with working basic export
-
-#### 1.1 Version Management
-```bash
-# Reset to v1.1.3 baseline
-git reset --hard <v1.1.3 commit hash>
-npm run build
-```
-
-#### 1.2 Code Cleanup
-- Remove all post-1.1.3 modifications
-- Ensure clean compilation
-- Verify basic functionality still works
-
-### Phase 2: HTML Export Feature
+### Phase 1: HTML Export Feature
 
 **Objective**: Add HTML export capability for debugging and comparison
-**Duration**: 2-3 days
 **Success Criteria**: Can export complete HTML with all styles
 
-#### 2.1 HTML Export Implementation
+#### 1.1 HTML Export Implementation
 ```typescript
 // Add to main.ts
 async exportToHTML(filePath: string): Promise<string> {
@@ -142,7 +123,7 @@ async exportToHTML(filePath: string): Promise<string> {
 }
 ```
 
-#### 2.2 Complete HTML Generation
+#### 1.2 Complete HTML Generation
 ```typescript
 generateCompleteHTML(content: string): string {
     return `
@@ -178,7 +159,7 @@ generateCompleteHTML(content: string): string {
 }
 ```
 
-#### 2.3 Style Extraction
+#### 1.3 Style Extraction
 ```typescript
 extractComputedStyles(): string {
     const styles: string[] = [];
@@ -203,7 +184,7 @@ extractComputedStyles(): string {
 }
 ```
 
-#### 2.4 Save HTML Feature
+#### 1.4 Save HTML Feature
 ```typescript
 async saveHTMLFile(originalPath: string, content: string): Promise<void> {
     const fileName = originalPath.replace(/\.md$/, '_debug.html');
@@ -214,13 +195,12 @@ async saveHTMLFile(originalPath: string, content: string): Promise<void> {
 }
 ```
 
-### Phase 3: Document Fragment Implementation
+### Phase 2: Document Fragment Implementation
 
 **Objective**: Implement DOM isolation using temporary DOM attachment
-**Duration**: 5-7 days
 **Success Criteria**: PDF export works without UI disruption
 
-#### 3.1 DOM Isolation Class
+#### 2.1 DOM Isolation Class
 ```typescript
 class DOMIsolationRenderer {
     private tempContainer: HTMLElement | null = null;
@@ -354,7 +334,7 @@ class DOMIsolationRenderer {
 }
 ```
 
-#### 3.2 Integration with Main Export
+#### 2.2 Integration with Main Export
 ```typescript
 async createPDFFromHTML_V2(container: HTMLElement): Promise<jsPDF> {
     const isolation = new DOMIsolationRenderer();
@@ -393,7 +373,7 @@ async createPDFFromHTML_V2(container: HTMLElement): Promise<jsPDF> {
 }
 ```
 
-#### 3.3 HTML Content Extraction
+#### 2.3 HTML Content Extraction
 ```typescript
 extractHTMLContent(container: HTMLElement): string {
     let htmlContent = '';
@@ -441,13 +421,12 @@ processElement(element: HTMLElement): string {
 }
 ```
 
-### Phase 4: Quality Assurance
+### Phase 3: Quality Assurance
 
 **Objective**: Ensure the new approach works correctly
-**Duration**: 2-3 days
 **Success Criteria**: All test cases pass
 
-#### 4.1 Comparison Testing
+#### 3.1 Comparison Testing
 ```typescript
 async compareOutputs(originalPath: string): Promise<void> {
     // Export HTML
@@ -463,7 +442,7 @@ async compareOutputs(originalPath: string): Promise<void> {
 }
 ```
 
-#### 4.2 Quality Metrics
+#### 3.2 Quality Metrics
 ```typescript
 interface QualityMetrics {
     textClarity: number;      // 0-100
@@ -655,15 +634,15 @@ describe('Performance Tests', () => {
 - ✅ Export process is smooth and professional
 - ✅ Error handling provides clear feedback
 
-## Implementation Timeline
 
-| Phase | Duration | Start Date | End Date | Deliverables |
+
+|      |      |      |      |      |
 |-------|----------|------------|----------|--------------|
-| Phase 1 | 1 day | Day 1 | Clean v1.1.3 baseline |
-| Phase 2 | 3 days | Day 2-4 | HTML export feature |
-| Phase 3 | 7 days | Day 5-11 | Document fragment implementation |
-| Phase 4 | 3 days | Day 12-14 | Quality assurance and testing |
-| **Total** | **14 days** | | **Complete solution** |
+|      |      |      |      |      |
+|      |      |      |      |      |
+|      |      |      |      |      |
+|      |      |      |      |      |
+|      |      |      |      ||
 
 ## Conclusion
 
