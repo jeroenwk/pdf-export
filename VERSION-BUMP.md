@@ -12,8 +12,12 @@ npm run bump:minor  # New features:    1.2.1 → 1.3.0
 npm run bump:major  # Breaking changes: 1.2.1 → 2.0.0
 
 # That's it! Everything is done automatically:
-# ✅ Version bumped
-# ✅ Built and deployed
+# ✅ Git status checked
+# ✅ ESLint validation
+# ✅ TypeScript compilation check
+# ✅ Version bumped (only if checks pass)
+# ✅ Production build
+# ✅ Deployed to Obsidian
 # ✅ Git commit and tag created
 # ✅ All versions verified
 ```
@@ -36,7 +40,21 @@ npm run build
 # Done! Version is now deployed and ready to use.
 ```
 
-## 📋 What Happens Automatically
+## 📋 What the Bump Script Does (Step by Step)
+
+1. **Validates git status** - Ensures working directory is clean
+2. **Runs ESLint** - Checks code quality (fails if errors found)
+3. **Runs TypeScript** - Validates types (fails if errors found)
+4. **Bumps version** - Only if all checks pass
+5. **Builds production bundle** - Compiles optimized code
+6. **Deploys to Obsidian** - Copies files to plugin folder
+7. **Verifies versions** - Confirms all versions match
+8. **Checks git state** - Validates tag and commit
+9. **Shows summary** - Color-coded report
+
+**Important:** Version bump only happens AFTER lint and TypeScript checks pass!
+
+## 📋 What Happens Automatically (Old Manual Method)
 
 ### When you run `npm version`:
 - ✅ Updates `package.json` version

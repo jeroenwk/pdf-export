@@ -87,19 +87,44 @@ info('\nStep 2: Reading current version...');
 const oldVersion = getVersion('package.json');
 log(`  Current version: ${oldVersion}`);
 
-// Step 3: Bump version
-info(`\nStep 3: Bumping ${bumpType} version...`);
+// Step 3: Run ESLint
+info('\nStep 3: Running ESLint...');
+try {
+	exec('npm run lint');
+	success('ESLint passed');
+} catch (e) {
+	error('ESLint failed! Fix linting errors before bumping version.');
+	exit(1);
+}
+
+// Step 4: Run TypeScript compilation
+info('\nStep 4: Running TypeScript compilation...');
+try {
+	exec('tsc -noEmit -skipLibCheck', true);
+	success('TypeScript compilation passed');
+} catch (e) {
+	error('TypeScript compilation failed! Fix type errors before bumping version.');
+	exit(1);
+}
+
+// Step 5: Bump version (only after lint and tsc pass)
+info(`\nStep 5: Bumping ${bumpType} version...`);
 const versionOutput = exec(`npm version ${bumpType}`, true);
 // Extract just the version number (last line should be vX.Y.Z)
 const newVersion = versionOutput.split('\n').pop().trim();
 success(`Version bumped: ${oldVersion} → ${newVersion}`);
 
-// Step 4: Build and deploy
-info('\nStep 4: Building and deploying...');
-exec('npm run build');
-success('Build and deployment complete');
+// Step 6: Build and deploy
+info('\nStep 6: Building production bundle and deploying...');
+try {
+	exec('node esbuild.config.mjs production');
+	success('Build and deployment complete');
+} catch (e) {
+	error('Build failed!');
+	exit(1);
+}
 
-// Step 5: Verify all versions
+// Step 7: Verify all versions
 header('Version Verification');
 
 const pkgVersion = getVersion('package.json');
@@ -120,8 +145,8 @@ if (!allMatch) {
 
 success('\n✓ All versions match!');
 
-// Step 6: Git verification
-info('\nStep 6: Verifying git state...');
+// Step 8: Git verification
+info('\nStep 8: Verifying git state...');
 const latestTag = exec('git describe --tags --abbrev=0', true);
 const latestCommit = exec('git log -1 --oneline', true);
 
@@ -135,8 +160,8 @@ if (latestTag !== newVersion) {
 
 success('✓ Git tag matches version');
 
-// Step 7: Check deployed files
-info('\nStep 7: Checking deployed files...');
+// Step 9: Check deployed files
+info('\nStep 9: Checking deployed files...');
 try {
 	const deployedFiles = exec('ls -lh "/Users/jeroendezwart/2th Brain/.obsidian/plugins/pdf-export/" | grep -E "(main.js|manifest.json)"', true);
 	log('\n' + deployedFiles);
