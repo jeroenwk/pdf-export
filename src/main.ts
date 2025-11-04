@@ -12,6 +12,7 @@ interface PDFExportSettings {
 	showTitle: boolean;
 	pdfMargin: number;
 	canvasScale: number;
+	imageScale: number;
 	treatHorizontalRuleAsPageBreak: boolean;
 }
 
@@ -22,6 +23,7 @@ const DEFAULT_SETTINGS: PDFExportSettings = {
 	showTitle: true,
 	pdfMargin: 10,
 	canvasScale: 1,
+	imageScale: 100,
 	treatHorizontalRuleAsPageBreak: false
 };
 
@@ -424,6 +426,7 @@ export default class PDFExportPlugin extends Plugin {
 
 				if (imagePath) {
 					console.log('[DEBUG] SUCCESS! Processing image:', imagePath.path);
+					console.log(`[DEBUG] Image scale setting: ${this.settings.imageScale}%`);
 
 					// Read image as binary
 					const imageData = await this.app.vault.readBinary(imagePath);
@@ -445,18 +448,23 @@ export default class PDFExportPlugin extends Plugin {
 					img.removeAttribute('width');
 					img.removeAttribute('height');
 
+					// Calculate scaled width based on imageScale percentage
+					const scaleFactor = this.settings.imageScale / 100;
+					const scaledWidth = Math.round(contentWidth * scaleFactor);
+					console.log(`[DEBUG] Scaling image: base width=${contentWidth}px, scale=${this.settings.imageScale}%, final width=${scaledWidth}px`);
+
 					// Apply CSS to ensure proper aspect ratio and prevent overflow
-					// Force the image to the calculated content width (based on page size)
-					img.style.width = `${contentWidth}px`;
-					img.style.maxWidth = `${contentWidth}px`;
+					// Force the image to the calculated content width (based on page size and scale)
+					img.style.width = `${scaledWidth}px`;
+					img.style.maxWidth = `${scaledWidth}px`;
 					img.style.height = 'auto';
 					img.style.display = 'block';
 					img.style.margin = '12pt auto';
 					img.style.overflow = 'visible';
 					img.style.pageBreakInside = 'avoid';
 
-					console.log(`Image embedded: ${imagePath.name} (${(imageData.byteLength / 1024).toFixed(2)} KB)`);
-					console.log(`Image styled with width: ${contentWidth}px, actual rendered width will be checked...`);
+					console.log(`[DEBUG] Image embedded: ${imagePath.name} (${(imageData.byteLength / 1024).toFixed(2)} KB)`);
+					console.log(`[DEBUG] Image styled with width: ${scaledWidth}px (${this.settings.imageScale}% of ${contentWidth}px)`);
 				} else {
 					console.warn('Could not find image file:', src);
 				}
@@ -491,6 +499,9 @@ export default class PDFExportPlugin extends Plugin {
 	applyPDFStyles(container: HTMLElement) {
 		// Inject PDF-friendly CSS
 		const contentWidth = calculateContentWidth(this.settings.pageSize, this.settings.pdfMargin);
+		// Apply image scale to the max-width in CSS
+		const scaledImageWidth = Math.round(contentWidth * (this.settings.imageScale / 100));
+		console.log(`[DEBUG] applyPDFStyles: contentWidth=${contentWidth}px, imageScale=${this.settings.imageScale}%, scaledImageWidth=${scaledImageWidth}px`);
 		const style = document.createElement('style');
 		style.textContent = `
 			.markdown-preview-view {
@@ -565,7 +576,7 @@ export default class PDFExportPlugin extends Plugin {
 				color: #000 !important;
 			}
 			.markdown-preview-view img {
-				max-width: ${contentWidth}px;
+				max-width: ${scaledImageWidth}px;
 				height: auto;
 				display: block;
 				margin: 12pt auto;
@@ -1037,6 +1048,21 @@ class PDFExportSettingTab extends PluginSettingTab {
 				.onChange(async (value) => {
 					this.plugin.settings.includeImages = value;
 					await this.plugin.saveSettings();
+				}));
+
+		// Image scale
+		new Setting(containerEl)
+			.setName('Image scale')
+			.setDesc('Scale images as percentage of page width (10-200%, default 100%)')
+			.addText(text => text
+				.setPlaceholder('100')
+				.setValue(String(this.plugin.settings.imageScale))
+				.onChange(async (value) => {
+					const num = parseFloat(value);
+					if (!isNaN(num) && num >= 10 && num <= 200) {
+						this.plugin.settings.imageScale = num;
+						await this.plugin.saveSettings();
+					}
 				}));
 
 		// PDF margin (image width is calculated automatically from this and page size)
