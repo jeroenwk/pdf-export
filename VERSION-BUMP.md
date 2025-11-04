@@ -1,8 +1,24 @@
 # Quick Version Bump Guide
 
-## ⚡ Quick Reference
+## ⚡ Quick Reference (NEW AUTOMATED METHOD)
 
-### To release a new version:
+### One-Command Bump & Deploy:
+
+```bash
+# Commit your changes first, then run ONE command:
+
+npm run bump:patch  # Bug fixes:       1.2.1 → 1.2.2
+npm run bump:minor  # New features:    1.2.1 → 1.3.0
+npm run bump:major  # Breaking changes: 1.2.1 → 2.0.0
+
+# That's it! Everything is done automatically:
+# ✅ Version bumped
+# ✅ Built and deployed
+# ✅ Git commit and tag created
+# ✅ All versions verified
+```
+
+## 📋 Old Method (Manual - Still Works)
 
 ```bash
 # 1. Commit your changes first
